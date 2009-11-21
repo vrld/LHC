@@ -2,7 +2,7 @@ CXX=g++
 CXXFLAGS=-Wall -Wextra -Werror -pedantic -ansi -g -msse
 INCLUDE=
 LIBDIRS=
-LDFLAGS=-lalut $(LIBDIRS)
+LDFLAGS=-lalut $(LIBDIRS) -lboost_thread
 
 SOURCES=sound.cpp
 OBJECTS=$(SOURCES:.cpp=.o)

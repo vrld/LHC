@@ -3,12 +3,44 @@
 #include <string>
 #include <cmath>
 #include <cstdlib>
-#include <ctime>
 #include <AL/alut.h>
+#include <boost/thread.hpp>
 
-size_t NUM_SPEAKERS = 3;
-ALuint *buffer;
-ALuint *source;
+double clamp(double v, double min = -1., double max = 1.)
+{ return (v > max ? max : (v < min ? min : v)); }
+
+struct Generator
+{ virtual double get(double p) = 0; };
+
+struct Signal
+{ 
+    Signal(Generator* g, double f, double p = 0.) : generator(g), freq(f), phase(p) {}
+    Generator *generator;
+    double freq;
+    double phase;
+    virtual double get(double t) { return generator->get(fmod(t * freq + phase, 1.)); }
+};
+
+struct Add : public Signal
+{
+    Add(Signal *aa, Signal *bb) : Signal(NULL, 0, 0), a(aa), b(bb) {}
+    Signal* a; Signal* b;
+    virtual double get(double t) { return a->get(t) + b->get(t); }
+};
+
+struct Mul : public Signal
+{
+    Mul(Signal *aa, Signal *bb) : Signal(NULL, 0, 0), a(aa), b(bb) {}
+    Signal* a; Signal* b;
+    virtual double get(double t) { return a->get(t) * b->get(t); }
+};
+
+struct Amp : public Signal
+{
+    Amp(Signal *s_, double a) : Signal(NULL, a, 0), s(s_) {}
+    Signal* s;
+    virtual double get(double t) { return freq * s->get(t); }
+};
 
 struct Sample
 {
@@ -19,87 +51,103 @@ struct Sample
         } b;
         short s;
     } __Bytes;
-    static const int INTERVAL = (1 << (8*sizeof(__Bytes)));
-    static const int INTERVAL_HALF = (INTERVAL >> 1);
+    static const int INTERVAL = (1 << (8*sizeof(__Bytes)-1)) - 1;
 
-    Sample(double freq_, double length = 1., size_t rate_ = 44000)
-        : freq(freq_), bytes(rate_ * length), rate(rate_)
+    Sample(double length = 1., size_t rate_ = 44000)
+        : bytes(rate_ * length), rate(rate_)
     {
-        srand(freq * time(NULL));
         samples = new __Bytes[bytes];
         bytes *= sizeof(__Bytes);
     }
     ~Sample() { 
         delete[] samples; 
     }
-    void fill()
+    void fill(struct Signal &s)
     {
-        for (size_t i = 0; i < bytes / sizeof(__Bytes); ++i, ++t)
-            samples[i].s = next();
+        int t = 0;
+        for (size_t i = 0; i < bytes / sizeof(__Bytes); ++i, ++t) {
+            double amp = clamp(s.get(static_cast<double>(t) / rate));
+            samples[i].s = amp * INTERVAL;
+        }
     }
-    virtual int next() = 0;
-    int bound(int v) 
-    { return v > INTERVAL_HALF ? INTERVAL_HALF : (v < -INTERVAL_HALF ? -INTERVAL_HALF : v); }
 
     __Bytes* samples;
-    double freq;
     size_t bytes;
     size_t rate;
-    int t;
 };
 
-struct Generator
+struct Sinus : public Generator
+{ virtual double get(double p) { return sin(p * 2 * 3.14159265); } };
+
+struct Triangle : public Generator
+{ virtual double get(double p) { return (p<=.5) ? (4.*p - 1.) : (3. - 4*p); } };
+
+struct Saw : public Generator 
+{ virtual double get(double p) { return 2.*p - 1.; } };
+
+struct WhiteNoise : public Generator
+{ virtual double get(double) { return (rand() % (1 << 15)) / double(1 << 14) - 1.; } }; // value in [-1,1]
+
+struct BrownNoise : public Generator
+{ 
+    BrownNoise() : last(0) {}
+    double last;
+    WhiteNoise wn;
+    virtual double get(double) { 
+        double tmp = clamp(last + wn.get(0.));
+        last = tmp;
+        return tmp;
+    }
+};
+
+size_t sem = 0;
+boost::mutex sem_lock;
+bool stop = false;
+
+Sinus g_sin;
+Triangle g_tri;
+Saw g_saw;
+WhiteNoise g_white;
+BrownNoise g_brown;
+
+void player(double freq, double length, Generator *gen)
 {
-    virtual int pcm(int t, int T) = 0;
+    {boost::mutex::scoped_lock l(sem_lock);
+        ++sem;
+    }
+    ALuint buffer, source;
+    alGenBuffers(1, &buffer);
+    alGenSources(1, &source);
+
+    Sample s(length, 128000);
+    Signal sig(gen, freq);
+    Amp amper(&sig, .95);
+    Signal sawer(&g_saw, freq);
+    Amp ampSaw(&sawer, .05);
+    Add adder(&amper, &ampSaw);
+    Signal tri(&g_sin, 1.5);
+    Mul modulate(&amper, &tri);
+
+    s.fill(modulate);
+
+    alBufferData(buffer, AL_FORMAT_MONO16, s.samples, s.bytes, s.rate);
+    alSourcei(source, AL_BUFFER, buffer);
+    alSourcePlay(source);
+
+    ALint v;
+    do {
+        alGetSourcei(source, AL_SOURCE_STATE, &v); 
+        boost::thread::yield();
+    } while (v == AL_PLAYING && !stop);
+
+    alSourcei(source, AL_BUFFER, NULL);
+    alDeleteBuffers(1, &buffer);
+    alDeleteSources(1, &source);
+
+    {boost::mutex::scoped_lock l(sem_lock);
+        --sem;
+    }
 }
-
-struct Triangle : public Sample
-{
-    Triangle(double f, double l, size_t r) : Sample(f,l,r), up(true) {}
-    bool up;
-    virtual int next()
-    {
-        double frac = t * freq / rate;
-        int v = (up ? -1 : 1) * (frac * INTERVAL - INTERVAL_HALF);
-        if (frac >= 1.0) {
-            up = !up;
-            t = 0;
-            v = up ? INTERVAL_HALF : -INTERVAL_HALF; // value might be out of bounds. fix this
-        }
-        return v;
-    }
-};
-
-struct Sinus : public Sample
-{
-    Sinus(double f, double l, size_t r) : Sample(f,l,r) {}
-    virtual int next()
-    {
-        double frac = t * freq / rate * 2 * 3.14159265;
-        return sin(frac) * INTERVAL_HALF;
-    }
-};
-
-struct WhiteNoise : public Sample
-{
-    WhiteNoise(double f, double l, size_t r) : Sample(f,l,r) {}
-    virtual int next()
-    {
-        return bound(rand() % INTERVAL - INTERVAL_HALF);
-    }
-};
-
-struct BrownNoise : public Sample 
-{
-    BrownNoise(double f, double l, size_t r) : Sample(f,l,r), last(0) {}
-    int last;
-    virtual int next()
-    {
-        int v = bound(last + rand() % INTERVAL - INTERVAL_HALF);
-        last = v;
-        return v;
-    }
-};
 
 int main()
 {
@@ -107,69 +155,42 @@ int main()
     alutInit(0, NULL);
     alGetError();
 
-    buffer = new ALuint[NUM_SPEAKERS];
-    alGenBuffers(NUM_SPEAKERS, buffer);
-    source = new ALuint[NUM_SPEAKERS];
-    alGenSources(NUM_SPEAKERS, source);
-
-    size_t rate = 64000;
-
     // MAGIC!
-    enum { SIN = 0, TRIANGLE, WHITE_NOISE, BROWN_NOISE } type = SIN;
-    const char* prompt[] = { "sin > ", "triangle > ", "white > ", "brown > " };
-    const char* allowed = "0123456789stwb";
+    const char* prompt_c[] = { "sin", "saw", "triangle", "white", "brown" };
+    const char* prompt = prompt_c[0];
     double freq;
     std::string inp;
+    Generator *gen = &g_sin;
+
+    bool run = true;
     do {
-        std::cout << prompt[type];
+        std::cout << "[satwb0-9q] (" << prompt << ") > ";
         std::cin >> inp;
         std::stringstream ss(inp);
         ss >> freq;
-        if (inp[0] == 's') type = SIN;
-        else if (inp[0] == 't') type = TRIANGLE;
-        else if (inp[0] == 'w') type = WHITE_NOISE;
-        else if (inp[0] == 'b') type = BROWN_NOISE;
-        else { 
-            alSourceStop(source[0]);
-            alSourceStop(source[1]);
-            alSourcei(source[0], AL_BUFFER, 0);
-            alSourcei(source[1], AL_BUFFER, 0);
-
-            Sample *s;
-            for (int i = 0; i < 2; ++i) {
-                freq += i * freq;
-                switch (type) {
-                    case SIN:
-                        s = new Sinus(freq, 12.5, rate); break;
-                    case TRIANGLE:
-                        s = new Triangle(freq, 12.5, rate); break;
-                    case WHITE_NOISE:
-                        s = new WhiteNoise(freq, 12.5, rate); break;
-                    case BROWN_NOISE:
-                    default:
-                        s = new BrownNoise(freq, 12.5, rate); break;
-                }
-                s->fill();
-
-                alBufferData(buffer[i], AL_FORMAT_MONO16, s->samples, s->bytes, s->rate);
-                delete s;
-
-                alSourcei(source[i], AL_BUFFER, buffer[i]);
-            }
-            alSourcePlay(source[0]);
-            alSourcePlay(source[1]);
+        switch (inp[0]) {
+            case 's': case 'S':
+                gen = &g_sin; prompt = prompt_c[0]; break;
+            case 'a': case 'A':
+                gen = &g_saw; prompt = prompt_c[1]; break;
+            case 't': case 'T':
+                gen = &g_tri; prompt = prompt_c[2]; break;
+            case 'w': case 'W':
+                gen = &g_white; prompt = prompt_c[3]; break;
+            case 'b': case 'B':
+                gen = &g_brown; prompt = prompt_c[4]; break;
+            case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9': 
+                boost::thread(boost::bind(&player, freq, 5, gen));
+                break;
+            default: run = false;
         }
-    } while (freq > 0 && (inp.find_first_of(allowed) != std::string::npos));
+    } while (run);
+
+    stop = true;
+    while (sem > 0)
+        /* loop */;
 
     // deinit
-    alSourceStopv(NUM_SPEAKERS, source);
-    for (size_t i = 0; i < NUM_SPEAKERS; ++i)
-        alSourcei(source[i], AL_BUFFER, NULL);
-    alDeleteBuffers(NUM_SPEAKERS, buffer);
-    alDeleteSources(NUM_SPEAKERS, source);
     alutExit();
-
-    delete[] buffer;
-    delete[] source;
 }
 
