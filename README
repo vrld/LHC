@@ -1,0 +1,27 @@
+Nedded:
+    OpenAL
+    ALUT
+    boost (boost-thread that is)
+
+To build: 
+    Try 'make'
+    If it does not work: edit Makefile
+
+To use:
+    ./sound
+    <type stuff>
+
+Example:
+
+./sound
+[satwb0-9q] (sin) > 440         # plays a sine at 440 Hz
+[satwb0-9q] (sin) > a           # switch to saw generator
+[satwb0-9q] (saw) > 330         # play a saw wave at 440 Hz
+[satwb0-9q] (saw) > t           # switch to triangle generator
+[satwb0-9q] (triangle) > 65     # you get the idea...
+[satwb0-9q] (triangle) > w      # switch to white noise
+[satwb0-9q] (white) > 9         # enter any numeric value here, does not matter
+[satwb0-9q] (white) > b         # switch to brown noise
+[satwb0-9q] (brown) > 9         # see above
+[satwb0-9q] (brown) > q         # quit (any other than satwb0-9 quits)
+
