@@ -1,27 +1,103 @@
-Nedded:
-    OpenAL
-    ALUT
-    boost (boost-thread that is)
+=== Nedded ===
+OpenAL
+ALUT
+Lua 5.1
+CMake >= 2.6
 
-To build: 
-    Try 'make'
-    If it does not work: edit Makefile
 
+=== Build instructions ===
+
+Linux:
+    $ mkdir build
+    $ cd build
+    $ ccmake ..
+    Press c
+    Edit options (if you want/have to)
+    Press c again
+    Press g to generate Makefile
+    $ make
+
+OSX (not tested or even known):
+    Propably the same as on Linux, but there should
+    be a way to create a XCode project.
+
+Windows (not tested):
+    Use CMakeSetup.exe to generate a Makefile.
+    Compile.
+
+=== Usage & Example ===
 To use:
-    ./sound
-    <type stuff>
+    $ ./lhc
+    <type lua code>
 
 Example:
+    $ ./lhc 
+    lhc> defaults.length = 7
+    lhc> play( signal{gen.saw, freq=440} )
+    lhc> play( function(t) return signal{gen.sin, freq=280}(t) * signal{gen.triangle, freq=3}(t) end )
+    lhc> play( function(t) return signal{gen.sin, freq=280}(t) * signal{gen.triangle, freq=3}(t) + signal{gen.brownNoise, amp=0.01}(t) end )
 
-./sound
-[satwb0-9q] (sin) > 440         # plays a sine at 440 Hz
-[satwb0-9q] (sin) > a           # switch to saw generator
-[satwb0-9q] (saw) > 330         # play a saw wave at 440 Hz
-[satwb0-9q] (saw) > t           # switch to triangle generator
-[satwb0-9q] (triangle) > 65     # you get the idea...
-[satwb0-9q] (triangle) > w      # switch to white noise
-[satwb0-9q] (white) > 9         # enter any numeric value here, does not matter
-[satwb0-9q] (white) > b         # switch to brown noise
-[satwb0-9q] (brown) > 9         # see above
-[satwb0-9q] (brown) > q         # quit (any other than satwb0-9 quits)
 
+=== Lua interface ===
+LHC uses Lua to leech on it's awesomeness. LHC defines functions and 
+tables, that can be used by Lua.
+
+
+Tables:
+"defauts": This table stores some default values.
+    defaults.samplerate = 96000 -- this: http://en.wikipedia.org/wiki/Sample_rate
+    defaults.length = 5         -- defines the default length of a sample
+    defaults.freq = 440         -- default frequency for signals
+    defaults.amp = 1            -- default amplitude for signals. Reasonable values are in [0,1]
+    defaults.phase = 0          -- default phase for signals
+
+Functions:
+  play( signal )
+    Creates and plays a sample using the function 'signal'. signal must 
+    return values in the range [-1,1]
+
+  signal{ generator[, freq = f, amp = a, phase = p] }:
+    Creates a signal function using a generator. The values in [] are optional.
+    Notice this function takes a table argument, so it uses {} instead of ()!
+
+    Use Lua's functional programming capabilities to mix signals (see example).
+
+
+"Generators":
+A generator accepts values in [0,1] and returns values in [-1,1],
+i.e.: "function rect(t) if t < 0.5 return -1 else return 1 end" is the
+generator for a rectangular signal.
+
+Some generators are predefined in the table gen:
+
+  gen.sin
+  gen.triangle
+  gen.saw
+  gen.rect
+  gen.whiteNoise
+  gen.brownNoise
+
+
+=== License ===
+Copyright (c) 2009 Matthias Richter
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
