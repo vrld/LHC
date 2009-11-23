@@ -33,9 +33,10 @@ To use:
 Example:
     $ ./lhc 
     lhc> defaults.length = 7
-    lhc> play( signal{gen.saw, freq=440} )
-    lhc> play( function(t) return signal{gen.sin, freq=280}(t) * signal{gen.triangle, freq=3}(t) end )
-    lhc> play( function(t) return signal{gen.sin, freq=280}(t) * signal{gen.triangle, freq=3}(t) + signal{gen.brownNoise, amp=0.01}(t) end )
+    lhc> saw = signal{gen.saw, f=440}
+    lhc> sin = signal{gen.sin, f=440}
+    lhc> sin:play()
+    lhc> saw:play()
 
 
 === Lua interface ===
@@ -52,15 +53,19 @@ Tables:
     defaults.phase = 0          -- default phase for signals
 
 Functions:
-  play( signal )
-    Creates and plays a sample using the function 'signal'. signal must 
-    return values in the range [-1,1]
 
-  signal{ generator[, freq = f, amp = a, phase = p] }:
-    Creates a signal function using a generator. The values in [] are optional.
-    Notice this function takes a table argument, so it uses {} instead of ()!
+  signal{ generator[, f = <number>, a = <number>, p = <number>] }:
+      Creates a signal function using a generator. Optional arguments are:
+          f ... frequency of the signal. If not set, defaults.freq is used.
+          a ... amplitude of the signal. If not set, defaults.amp is used.
+          p ... phase of the signal. If not set, defaults.phase is used.
+      Notice this function takes a table argument, so it uses {} instead of ()!
 
-    Use Lua's functional programming capabilities to mix signals (see example).
+      Use Lua's functional programming capabilities to mix signals (see example).
+
+  signal:play()
+  signal:stop()
+      Obvious.
 
 
 "Generators":
