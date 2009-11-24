@@ -6,6 +6,15 @@
 #include <AL/alut.h>
 #include <assert.h>
 
+#define GET_NUMBER_OR_DEFAULT(index, sname, name) do { lua_getfield(L, (index), sname); \
+    if (!lua_isnumber(L, -1)) { \
+        lua_pop(L, 1); \
+        lua_getglobal(L, "defaults"); \
+        lua_getfield(L, -1, name); \
+        lua_remove(L, -2); \
+    } } while(0)
+
+
 typedef struct Signal__
 {
     ALuint buffer;
@@ -15,6 +24,41 @@ typedef struct Signal__
 } Signal;
 
 static const int INTERVAL = (1 << (8 * sizeof(short) - 1)) - 1;
+
+static void signal_new_from_closure(lua_State *L);
+static int signal_userdata_is_signal(lua_State* L, int index)
+{
+    int is_signal = 0;
+    void* p = lua_touserdata(L, index);
+    if (p == NULL)
+        return 0;
+
+    if (!lua_getmetatable(L, index))
+        return 0;
+
+    lua_getfield(L, -1, "__index");
+    lua_getfield(L, LUA_REGISTRYINDEX, "lhc.signal");
+    is_signal = lua_rawequal(L, -1, -2);
+    lua_pop(L, 3);
+    return is_signal;
+}
+
+static Signal* signal_checkudata(lua_State *L, int index)
+{
+    Signal* p = lua_touserdata(L, index);
+    if (p != NULL) {
+        if (lua_getmetatable(L, index)) {
+            lua_getfield(L, -1, "__index");
+            lua_getfield(L, LUA_REGISTRYINDEX, "lhc.signal");
+            if (lua_rawequal(L, -1, -2)) {
+                lua_pop(L, 3);
+                return p;
+            }
+        }
+    }
+    luaL_typerror(L, index, "signal");
+    return NULL;
+}
 
 static int signal_closure(lua_State *L)
 {
@@ -36,14 +80,12 @@ static int signal_closure(lua_State *L)
 }
 
 /* TODO: error checking on OpenAL functions */
-int l_play(lua_State* L)
+static int signal_play(lua_State* L)
 {
     double rate, length, value, t;
     size_t bytes, sample_count, i;
     short* samples;
-    Signal* signal = lua_touserdata(L, 1);
-    if (signal == NULL)
-        return luaL_error(L, "signal argument expected in signal.play!");
+    Signal* signal = signal_checkudata(L, 1);
 
     if (lua_getmetatable(L, 1) == 0)
         return luaL_error(L, "signal argument expected in signal.play!");
@@ -97,16 +139,14 @@ int l_play(lua_State* L)
     return 0;
 }
 
-int l_stop(lua_State *L)
+static int signal_stop(lua_State *L)
 {
-    Signal* signal = lua_touserdata(L, 1);
-    if (signal == NULL || lua_getmetatable(L, 1) == 0)
-        return luaL_error(L, "signal argument expected in signal.stop!");
+    Signal* signal = signal_checkudata(L, 1);
     alSourceStop(signal->source);
     return 0;
 }
 
-int signal_gc(lua_State *L)
+static int signal_gc(lua_State *L)
 {
     Signal* signal = lua_touserdata(L, 1);
 
@@ -118,13 +158,146 @@ int signal_gc(lua_State *L)
     return 0;
 }
 
-#define GET_NUMBER_OR_DEFAULT(index, sname, name) do { lua_getfield(L, (index), sname); \
-    if (!lua_isnumber(L, -1)) { \
+static int signal_add_number_signal_closure(lua_State *L)
+{
+    double sval = lua_tonumber(L, lua_upvalueindex(1));
+    lua_pushvalue(L, lua_upvalueindex(2));
+    lua_insert(L, 1);
+    lua_call(L, 1, 1);
+    sval += lua_tonumber(L, -1);
+    lua_pop(L, 1);
+
+    if (sval > 1.)  sval = 1.;
+    if (sval < -1.) sval = -1.;
+    lua_pushnumber(L, sval);
+    return 1;
+}
+
+static int signal_add_signal_signal_closure(lua_State *L)
+{
+    double sval;
+    lua_pushvalue(L, 1); /* st: t t */
+    lua_pushvalue(L, lua_upvalueindex(1));
+    lua_insert(L, 1);
+    lua_pushvalue(L, lua_upvalueindex(2));
+    lua_insert(L, 3); /* st: f1 t f2 t */
+    
+    lua_call(L, 1, 1);
+    sval = lua_tonumber(L, -1); 
+    lua_pop(L, 1);
+
+    lua_call(L, 1, 1);
+    sval += lua_tonumber(L, -1);
+    lua_pop(L,1); 
+
+    if (sval > 1.)  sval = 1.;
+    if (sval < -1.) sval = -1.;
+    lua_pushnumber(L, sval);
+    
+    return 1;
+}
+
+/* push metatable to stack and check for type */
+#define GET_SIGNAL_FUNC(L, arg) \
+        if (!lua_getmetatable(L, arg)) \
+            return luaL_typerror(L, arg, "signal"); \
+        lua_getfield(L, -1, "__index"); \
+        lua_getfield(L, LUA_REGISTRYINDEX, "lhc.signal"); \
+        if (!lua_rawequal(L, -1, -2)) \
+            return luaL_typerror(L, arg, "signal"); \
+        lua_pop(L, 2); \
+        lua_getfield(L, -1, "signal"); \
+        lua_replace(L, arg); \
         lua_pop(L, 1); \
-        lua_getglobal(L, "defaults"); \
-        lua_getfield(L, -1, name); \
-        lua_remove(L, -2); \
-    } } while(0)
+
+static int signal_add(lua_State *L)
+{
+    if (lua_isnumber(L, 2)) { /* transform: sig + a -> a + sig */
+        lua_insert(L, 1);
+    }
+
+    GET_SIGNAL_FUNC(L, 2);
+    if (lua_isnumber(L, 1)) {
+        lua_pushcclosure(L, &signal_add_number_signal_closure, 2);
+    } else {
+        GET_SIGNAL_FUNC(L, 1);
+        lua_pushcclosure(L, &signal_add_signal_signal_closure, 2);
+    } /* stack at this point: closure */
+
+    signal_new_from_closure(L);
+
+    return 1;
+}
+
+static int signal_sub(lua_State *L)
+{
+    double t;
+    if (!signal_userdata_is_signal(L,1))
+        return luaL_typerror(L, 1, "signal");
+
+    t = luaL_checknumber(L, 2);
+    lua_pushnumber(L, -t);
+    lua_replace(L, 2);
+
+    return signal_add(L);
+}
+
+static int signal_mul_number_signal_closure(lua_State *L)
+{
+    double sval = lua_tonumber(L, lua_upvalueindex(1));
+    lua_pushvalue(L, lua_upvalueindex(2));
+    lua_insert(L, 1);
+    lua_call(L, 1, 1);
+    sval *= lua_tonumber(L, -1);
+    lua_pop(L, 1);
+
+    if (sval > 1.)  sval = 1.;
+    if (sval < -1.) sval = -1.;
+    lua_pushnumber(L, sval);
+    return 1;
+}
+
+static int signal_mul_signal_signal_closure(lua_State *L)
+{
+    double sval;
+    lua_pushvalue(L, 1); /* st: t t */
+    lua_pushvalue(L, lua_upvalueindex(1));
+    lua_insert(L, 1);
+    lua_pushvalue(L, lua_upvalueindex(2));
+    lua_insert(L, 3); /* st: f1 t f2 t */
+    
+    lua_call(L, 1, 1);
+    sval = lua_tonumber(L, -1); 
+    lua_pop(L, 1);
+
+    lua_call(L, 1, 1);
+    sval *= lua_tonumber(L, -1);
+    lua_pop(L,1); 
+
+    if (sval > 1.)  sval = 1.;
+    if (sval < -1.) sval = -1.;
+    lua_pushnumber(L, sval);
+    
+    return 1;
+}
+
+static int signal_mul(lua_State *L)
+{
+    if (lua_isnumber(L, 2)) { /* transform: sig * a -> a * sig */
+        lua_insert(L, 1);
+    }
+
+    GET_SIGNAL_FUNC(L, 2);
+    if (lua_isnumber(L, 1)) {
+        lua_pushcclosure(L, &signal_mul_number_signal_closure, 2);
+    } else {
+        GET_SIGNAL_FUNC(L, 1);
+        lua_pushcclosure(L, &signal_mul_signal_signal_closure, 2);
+    }
+    signal_new_from_closure(L);
+
+    return 1;
+}
 
 static int l_signal(lua_State *L)
 {
@@ -139,27 +312,40 @@ static int l_signal(lua_State *L)
     GET_NUMBER_OR_DEFAULT(-2, "f", "freq");
     GET_NUMBER_OR_DEFAULT(-3, "a", "amp");
     GET_NUMBER_OR_DEFAULT(-4, "p", "phase");
-    /* stack content: args, generator, freq, amp, phase */
 
     /* create metatable for signal userdatum */
     lua_pushcclosure(L, &signal_closure, 4); 
-    lua_newtable(L);
-    lua_replace(L, 1); /* stack: table closure */
-    lua_setfield(L, 1, "signal"); /* {signal = closure} */
-    lua_pushcfunction(L, l_play);
-    lua_setfield(L, 1, "play"); /* {signal = closure, play = l_play} */
-    lua_pushcfunction(L, l_stop);
-    lua_setfield(L, 1, "stop"); /* {signal = closure, play = l_play, stop = l_stop} */
-    lua_pushcfunction(L, signal_gc);
-    lua_setfield(L, 1, "__gc"); /* {signal = closure, play = l_play, stop = l_stop, __gc = signal_gc } */
-    lua_pushvalue(L, 1);
-    lua_setfield(L, 1, "__index"); /* this provides OO-access for the userdata */
-
-    Signal* s = lua_newuserdata(L, sizeof(Signal)); /* stack: { signal, play, stop, __gc, __index } Signal */
-    lua_insert(L, 1); /* stack: Signal { signal, play, stop, __gc, __index }*/
-    lua_setmetatable(L, 1);
-    s->is_generated = 0;
+    lua_replace(L, 1);
+    signal_new_from_closure(L);
     return 1; /* Signal userdata */
+}
+
+static void signal_new_from_closure(lua_State *L) 
+{
+    lua_newtable(L);
+    lua_insert(L, -2);
+    lua_setfield(L, -2, "signal");
+
+    luaL_newmetatable(L, "lhc.signal");
+    lua_pushcfunction(L, signal_play);
+    lua_setfield(L, -2, "play");
+    lua_pushcfunction(L, signal_stop);
+    lua_setfield(L, -2, "stop");
+   
+    lua_setfield(L, -2, "__index");
+    lua_pushcfunction(L, signal_gc);
+    lua_setfield(L, -2, "__gc");
+    lua_pushcfunction(L, signal_mul);
+    lua_setfield(L, -2, "__mul");
+    lua_pushcfunction(L, signal_add);
+    lua_setfield(L, -2, "__add");
+    lua_pushcfunction(L, signal_sub);
+    lua_setfield(L, -2, "__sub");
+
+    Signal* s = lua_newuserdata(L, sizeof(Signal));
+    lua_insert(L, -2);
+    lua_setmetatable(L, -2);
+    s->is_generated = 0;
 }
 
 int luaopen_signal(lua_State *L)
