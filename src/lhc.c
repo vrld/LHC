@@ -55,7 +55,7 @@ int main(int argc, char** argv)
     SET_DEFAULT("phase", 0);
     lua_setglobal(L, "defaults");
 
-    if (argc > 0)
+    if (argc > 1)
     {
         FILE* f = fopen(argv[1], "r");
         if (f != NULL)
