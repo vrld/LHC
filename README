@@ -32,17 +32,35 @@ To use:
 
 Example:
     $ ./lhc 
-    lhc> defaults.length = 7
+    lhc> -- play some signals
     lhc> saw = signal{gen.saw, f=220, a=.4}
-    lhc> sin = signal{gen.sin, f=440}
     lhc> saw:play()
+    lhc> sin = signal{gen.sin, f=440}
     lhc> sin:play()
+    
+    lhc> -- mix samples 
     lhc> sawsin = sin + saw
     lhc> sawsin:play()
-    lhc> mod = sawsin * sig{gen.triangle,f=1}
+    
+    lhc> -- modulate signals
+    lhc> mod = sig{gen.sin,f=100} * sig{gen.triangle,f=1}
     lhc> mod:play()
-    lhc> mod2 = (sig{gen.saw, f=220, a=.2} + .8 * sig{gen.sin}) * sig{gen.sin,f=1}
+    lhc> mod2 = (sig{gen.sin, f=220, a=.2} + .8 * sig{gen.sin}) * sig{gen.sin,f=1}
     lhc> mod2:play()
+
+    lhc> -- the frequency, amplitude and phase can be a function, too:
+    lhc> defaults.length = 30
+    lhc> function amp(t) return .5 + gen.sin(t) / 2 end
+    lhc> function rise(t) return 300 * (1 + t / defaults.length) + gen.sin(t) end
+    lhc> r = sig{gen.sin, f=rise, a=amp}
+    lhc> r:play()
+
+    lhc> -- ahhh, the ocean...
+    lhc> function ocean(t) return .15 * amp(.1*t) + .05 end
+    lhc> o = sig{gen.brownNoise, a = function(t) return .15 * amp(.1*t) + .05 end}
+    lhc> o:play()
+    lhc> rocean = r + o
+    lhc> rocean:play()
 
 
 === Lua interface ===
@@ -77,6 +95,9 @@ Signals:
           f ... frequency of the signal. If not set, defaults.freq is used.
           a ... amplitude of the signal. If not set, defaults.amp is used.
           p ... phase of the signal. If not set, defaults.phase is used.
+        
+          f, a and p are either numbers or functions of t.
+
         Notice this function takes a table argument, so it uses {} instead of ()!
 
     Playback is done via:
