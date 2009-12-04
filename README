@@ -2,6 +2,7 @@
 OpenAL
 ALUT
 Lua 5.1
+GNU Readline
 CMake >= 2.6
 
 
@@ -24,6 +25,7 @@ OSX (not tested or even known):
 Windows (not tested):
     Use CMakeSetup.exe to generate a Makefile.
     Compile.
+
 
 === Usage & Example ===
 To use:

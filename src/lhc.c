@@ -33,14 +33,22 @@
 
 #include "generators.h"
 #include "signal.h"
+#include "thread.h"
+#include "commandline.h"
+
+lhc_mutex lock_lua_state;
+
+void exec_file(lua_State* L, const char* file);
+void do_commandline(lua_State* L);
+void dispatch_coroutines(lua_State* L);
 
 #define SET_DEFAULT(field, value) lua_pushnumber(L, (value)); lua_setfield(L, -2, (field))
 int main(int argc, char** argv)
 {
-    char input_buffer[512];
-    int error;
     alutInit(&argc, argv);
     alGetError();
+
+    lhc_mutex_init(&lock_lua_state);
 
     lua_State *L = lua_open();
     luaL_openlibs(L);
@@ -48,47 +56,71 @@ int main(int argc, char** argv)
     lua_cpcall(L, luaopen_signal, NULL);
 
     lua_createtable(L, 0, 5);
-    SET_DEFAULT("samplerate", 96000);
+    SET_DEFAULT("samplerate", 44100);
     SET_DEFAULT("length", 5);
     SET_DEFAULT("freq", 440);
     SET_DEFAULT("amp", 1);
     SET_DEFAULT("phase", 0);
     lua_setglobal(L, "defaults");
 
+    lua_newtable(L);
+    lua_setglobal(L, "signal_threads");
+
+    /* load file  */
     if (argc > 1)
-    {
-        FILE* f = fopen(argv[1], "r");
-        if (f != NULL)
-        {
-            fclose(f);
-            error = luaL_dofile(L, argv[1]);
-            if (error) {
-                fprintf(stderr, "error: %s\n", lua_tostring(L, -1));
-            } else {
-                char tmp;
-                fprintf(stdin, "type anything to exit...");
-                fread(&tmp, 1, 1, stdin);
-            }
-        }
-        else
-        {
-            fprintf(stderr, "cannot open '%s' for reading!\n", argv[1]);
-        }
-    }
-    else
-    {
-        printf("lhc> ");
-        while (fgets(input_buffer, sizeof(input_buffer), stdin) != NULL) {
-            error = luaL_loadbuffer(L, input_buffer, strlen(input_buffer), "line") || lua_pcall(L, 0,0,0);
-            if (error) {
-                fprintf(stderr, "error: %s\n", lua_tostring(L, -1));
-                lua_pop(L, 1);
-            }
-            printf("lhc> ");
-        }
-    }
+        exec_file(L, argv[1]);
+
+    do_commandline(L);
+
     lua_close(L);
 
     alutExit();
     return 0;
+}
+
+void exec_file(lua_State* L, const char* file)
+{
+    FILE* f = fopen(file, "r");
+    int error;
+    if (f != NULL)
+    {
+        fclose(f);
+        error = luaL_dofile(L, file);
+        if (error)
+            fprintf(stderr, "error: %s\n", lua_tostring(L, -1));
+        else
+            printf("loaded file '%s'!\n", file);
+    }
+    else
+    {
+        fprintf(stderr, "cannot open '%s' for reading!\n", file);
+    }
+}
+
+void do_commandline(lua_State* L)
+{
+    int error;
+    char in_buffer[LHC_CMDLINE_INPUT_BUFFER_SIZE];
+    char *input = in_buffer;
+#ifdef WITH_GNU_READLINE
+    rl_bind_key ('\t', rl_insert); /* TODO: tab completion on globals */
+#endif
+
+    while (read_line(input, "lhc> "))
+    {
+        if (input[0] != 0 && input[0] != '\n') 
+        {
+            save_line(input);
+            CRITICAL_SECTION(&lock_lua_state)
+            {
+                error = luaL_loadbuffer(L, input, strlen(input), "line") || lua_pcall(L, 0,0,0);
+                if (error)
+                {
+                    fprintf(stderr, "error: %s\nlhc> ", lua_tostring(L, -1));
+                    lua_pop(L, 1);
+                }
+            }
+            free_line(input);
+        }
+    }
 }
