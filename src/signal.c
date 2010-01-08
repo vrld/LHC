@@ -60,7 +60,7 @@ static void signal_new_from_closure(lua_State *L);
  * return true if stack value at index is a signal userdata
  */
 static int signal_userdata_is_signal(lua_State* L, int index)
-{
+{ 
     int is_signal = 0;
     void* p = lua_touserdata(L, index);
     if (p == NULL)
@@ -111,7 +111,6 @@ static Signal* signal_checkudata(lua_State *L, int index)
 static int signal_closure(lua_State *L)
 {
     double t = luaL_checknumber(L, -1);
-    /* TODO:freq, amp, phase may also be functions! */
     /* TODO: Stereo signal - channel upvalue */
     double freq, amp, phase; /* channel */
 
@@ -272,10 +271,11 @@ static int signal_play(lua_State* L)
     if (signal->status == SIGNAL_PLAYING)
         return 0;
 
-    lua_getglobal(L, "signal_threads");
+    lua_getglobal(L, "signals");
+    lua_getfield(L, -1, "threads");
     lua_pushvalue(L, 1);
     signal->L = lua_newthread(L);
-    lua_settable(L, -3); 
+    lua_settable(L, -3);
 
     /* move signal metatable to signal stack */
     lua_getmetatable(L, 1);
@@ -287,8 +287,6 @@ static int signal_play(lua_State* L)
     {
         fprintf(stderr, "Cannot start signal thread!\n");
     }
-
-    lua_pop(L, 1);
 
     return 0;
 }
@@ -536,7 +534,6 @@ static void signal_new_from_closure(lua_State *L)
  */
 int luaopen_signal(lua_State *L)
 {
-    lua_register(L, "signal", l_signal);
     lua_register(L, "sig", l_signal);
     return 0;
 }

@@ -35,20 +35,24 @@ To use:
 Example:
     $ ./lhc 
     lhc> -- play some signals
-    lhc> saw = signal{gen.saw, f=220, a=.4}
+    lhc> saw = sig{gen.saw, f=220, a=.4}
     lhc> saw:play()
-    lhc> sin = signal{gen.sin, f=440}
+    lhc> sin = sig{gen.sin, f=440}
     lhc> sin:play()
+    lhc> signals.stop()
     
     lhc> -- mix samples 
     lhc> sawsin = sin + saw
     lhc> sawsin:play()
+    lhc> signals.stop()
     
     lhc> -- modulate signals
     lhc> mod = sig{gen.sin,f=100} * sig{gen.triangle,f=1}
     lhc> mod:play()
+    lhc> mod:stop()
     lhc> mod2 = (sig{gen.sin, f=220, a=.2} + .8 * sig{gen.sin}) * sig{gen.sin,f=1}
     lhc> mod2:play()
+    lhc> signals.clear()
 
     lhc> -- the frequency, amplitude and phase can be a function, too:
     lhc> defaults.length = 30
@@ -56,13 +60,14 @@ Example:
     lhc> function rise(t) return 300 * (1 + t / defaults.length) + gen.sin(t) end
     lhc> r = sig{gen.sin, f=rise, a=amp}
     lhc> r:play()
+    lhc> r:stop()
 
     lhc> -- ahhh, the ocean...
     lhc> function ocean(t) return .15 * amp(.1*t) + .05 end
     lhc> o = sig{gen.brownNoise, a = function(t) return .15 * amp(.1*t) + .05 end}
     lhc> o:play()
     lhc> rocean = r + o
-    lhc> rocean:play()
+    lhc> o:stop() rocean:play()
 
 
 === Lua interface ===
@@ -71,8 +76,7 @@ tables, that can be used by Lua.
 
 
 defauts: This table stores some default values.
-    defaults.samplerate = 96000 -- this: http://en.wikipedia.org/wiki/Sample_rate
-    defaults.length = 5         -- defines the default length of a sample
+    defaults.samplerate = 44100 -- this: http://en.wikipedia.org/wiki/Sample_rate
     defaults.freq = 440         -- default frequency for signals
     defaults.amp = 1            -- default amplitude for signals. Reasonable values are in [0,1]
     defaults.phase = 0          -- default phase for signals
@@ -115,6 +119,15 @@ Signals:
     signal' = signal1 + signal2
 
     See example.
+
+    There is also a table 'signals' providing access to all signals:
+        signals.stop()      -- stops all signals
+        signals.clear()     -- stops and deletes all signals
+
+        signals.threads     -- table containing signals threads. dont touch unless you know what you do.
+                            -- this may be useful if you have done something like
+                            -- 'sig{gen.sin, f = very complicated}:play()' and want access to this
+                            -- signal.
 
 
 === License ===

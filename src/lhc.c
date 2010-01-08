@@ -57,14 +57,21 @@ int main(int argc, char** argv)
 
     lua_createtable(L, 0, 5);
     SET_DEFAULT("samplerate", 44100);
-    SET_DEFAULT("length", 5);
     SET_DEFAULT("freq", 440);
     SET_DEFAULT("amp", 1);
     SET_DEFAULT("phase", 0);
     lua_setglobal(L, "defaults");
 
     lua_newtable(L);
-    lua_setglobal(L, "signal_threads");
+    lua_newtable(L);
+    lua_setfield(L, -2, "threads");
+    const char* stop_all_signals = "for _s_, _ in pairs(signals.threads) do _s_:stop() end";
+    luaL_loadbuffer(L, stop_all_signals, strlen(stop_all_signals), "signals.stop()");
+    lua_setfield(L, -2, "stop");
+    const char* clear_all_signals = "for _s_, _ in pairs(signals.threads) do _s_:stop() signals.threads[_s_] = nil end";
+    luaL_loadbuffer(L, clear_all_signals, strlen(clear_all_signals), "signals.clear()");
+    lua_setfield(L, -2, "clear");
+    lua_setglobal(L, "signals");
 
     /* load file  */
     if (argc > 1)
@@ -116,7 +123,7 @@ void do_commandline(lua_State* L)
                 error = luaL_loadbuffer(L, input, strlen(input), "line") || lua_pcall(L, 0,0,0);
                 if (error)
                 {
-                    fprintf(stderr, "error: %s\nlhc> ", lua_tostring(L, -1));
+                    fprintf(stderr, "error: %s\n", lua_tostring(L, -1));
                     lua_pop(L, 1);
                 }
             }
