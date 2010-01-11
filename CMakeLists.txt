@@ -73,7 +73,6 @@ if (ALL_FOUND)
         lhc.c
         generators.c
         signal.c
-        queue.c
     )
     add_executable(lhc ${SRCS})
     target_link_libraries(lhc ${LIBS})
