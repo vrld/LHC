@@ -31,55 +31,43 @@
 
 static const double PI = 3.1415926535897;
 
-static int generator_sin(lua_State *L)
-{
-    double t = luaL_checknumber(L, -1);
-    lua_pushnumber(L, sin(t * 2 * PI));
-    return 1;
-}
+#define GENERATOR(name, function) \
+    static int generator_ ##name(lua_State* L) { \
+        double t = luaL_checknumber(L, 1); \
+        double step = luaL_checknumber(L, 2); \
+        int bsize = luaL_checkint(L, 3); \
+        int i; \
+        lua_newtable(L); \
+        for (i = 1; i <= bsize; ++i, t+= step) { \
+            lua_pushnumber(L, (function)); \
+            lua_rawseti(L, -2, i); \
+        } \
+        return 1; \
+    }
 
-static int generator_triangle(lua_State *L)
-{
-    double t = fmod(luaL_checknumber(L, -1), 1.);
-    if (t <= .5) 
-        lua_pushnumber(L, 4.*t - 1.);
-    else 
-        lua_pushnumber(L, 3. - 4*t);
-    return 1;
-}
-
-static int generator_saw(lua_State *L)
-{
-    double t = fmod(luaL_checknumber(L, -1), 1.);
-    lua_pushnumber(L, 2.*t - 1.);
-    return 1;
-}
-
-static int generator_rect(lua_State *L)
-{
-    double t = fmod(luaL_checknumber(L, -1), 1.);
-    if (t <= .5) 
-        lua_pushnumber(L, 1.);
-    else 
-        lua_pushnumber(L, -1.);
-    return 1;
-}
-
-static int generator_whiteNoise(lua_State *L)
-{
-    double r = (rand() % (1 << 15)) / (double)(1 << 14) - 1.;
-    lua_pushnumber(L, r);
-    return 1;
-}
+GENERATOR(sin,        sin(t * 2 * PI));
+GENERATOR(triangle,   t<=.5 ? 4.*t-1. : 3.-4.*t);
+GENERATOR(saw,        2. * t - 1.);
+GENERATOR(rect,       t<=.5 ? 1. : -1.);
+GENERATOR(whiteNoise, (rand() % (1 << 15)) / (double)(1<<14) - 1.);
 
 static int generator_brownNoise_closure(lua_State *L)
 {
     double last = lua_tonumber(L, lua_upvalueindex(1));
-    double r = (rand() % (1 << 15)) / (double)(1 << 14) - 1. + last;
-    if (r < -1.) r = -1.;
-    if (r > 1.)  r =  1.;
-    lua_pushnumber(L, r);
-    lua_pushvalue(L, -1);
+    int bsize = luaL_checkint(L, 3);
+    int i;
+
+    lua_newtable(L);
+    for (i = 0; i < bsize; ++i) {
+        last = (rand() % (1 << 15)) / (double)(1 << 14) - 1. + last;
+        if (last < -1.) last = -1.;
+        if (last >  1.) last =  1.;
+        lua_pushnumber(L, last);
+        lua_rawseti(L, -2, i);
+    }
+
+    /* save last random value for next call of this generator */
+    lua_pushnumber(L, last);
     lua_replace(L, lua_upvalueindex(1));
     return 1;
 }
