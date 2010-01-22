@@ -1,7 +1,7 @@
 /*********************************************************************
  *  This file is part of LHC
  *
- *  Copyright (c) 2009 Matthias Richter
+ *  Copyright (c) 2010 Matthias Richter
  * 
  *  Permission is hereby granted, free of charge, to any person
  *  obtaining a copy of this software and associated documentation
@@ -28,505 +28,441 @@
 #include <lauxlib.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <math.h>
-#include <AL/alut.h>
 #include <assert.h>
+#include <portaudio.h>
 
 #include "thread.h"
 #include "config.h"
+#include "pa_assert.h"
 
 extern lhc_mutex lock_lua_state;
 
-enum { SIGNAL_PLAYING = 0, SIGNAL_STOPPED, SIGNAL_UNDEFINED };
+enum { SIGNAL_UNDEFINED, SIGNAL_PLAYING, SIGNAL_STOPPED };
 
-typedef struct Signal__
-{
-    ALuint buffers[SAMPLE_BUFFER_COUNT];
-    ALuint source;
-    lhc_thread thread;
+typedef struct {
+    double t;
     lua_State *L;
+    float buffers[SAMPLE_BUFFER_COUNT][SAMPLE_BUFFER_SIZE];
+    int current_buffer;
+    int read_buffer_empty;
     int status;
-    size_t time;
+
+    lhc_thread thread;
 } Signal;
 
-typedef short PCMSample;
-
-/* Maximum/Minumum value of the PCM sample */
-static const int INTERVAL = (1 << (8 * sizeof(PCMSample) - 1)) - 1;
-
-static void signal_new_from_closure(lua_State *L);
-
 /*
- * return true if stack value at index is a signal userdata
+ * returns true if userdata at idx is a signal
  */
-static int signal_userdata_is_signal(lua_State* L, int index)
-{ 
+static int signal_userdata_is_signal(lua_State* L, int idx)
+{
     int is_signal = 0;
-    void* p = lua_touserdata(L, index);
+    void *p = lua_touserdata(L, idx);
     if (p == NULL)
         return 0;
 
-    if (!lua_getmetatable(L, index))
+    if (!lua_getmetatable(L, idx))
         return 0;
 
-    lua_getfield(L, -1, "__index");
     lua_getfield(L, LUA_REGISTRYINDEX, "lhc.signal");
     is_signal = lua_rawequal(L, -1, -2);
-    lua_pop(L, 3);
+    lua_pop(L, 2);
     return is_signal;
 }
 
 /*
- * check if stack-value at index is a signal userdata and return it
- * does a luaL_typerror on failure (which does not return!)
+ * returns userdata at index if it is a signal. yields a
+ * type error if it is not (never returns!)
  */
-static Signal* signal_checkudata(lua_State *L, int index)
+static Signal* signal_checkudata(lua_State* L, int idx)
 {
-    Signal* p = lua_touserdata(L, index);
+    Signal* p = lua_touserdata(L, idx);
     if (p != NULL) {
-        if (lua_getmetatable(L, index)) {
-            lua_getfield(L, -1, "__index");
+        if (lua_getmetatable(L, idx)) {
             lua_getfield(L, LUA_REGISTRYINDEX, "lhc.signal");
             if (lua_rawequal(L, -1, -2)) {
-                lua_pop(L, 3);
+                lua_pop(L, 2);
                 return p;
             }
         }
     }
-    luaL_typerror(L, index, "signal");
+    luaL_typerror(L, idx, "signal");
     return NULL;
 }
 
-#define GET_FUNCTION_OR_NUMBER(var, L, uvindex, t)                  \
-    lua_pushvalue(L, lua_upvalueindex( (uvindex) ));            \
-    if (!lua_isnumber(L, lua_upvalueindex( (uvindex) ))) {      \
-        lua_pushnumber(L, (t) );                                \
-        lua_call(L, 1, 1);                                      \
-    }                                                           \
-    var = lua_tonumber(L, -1);                                  \
-    lua_pop(L, 1)
 /*
- * signal closure for generators - basic signals
+ * replaces userdata at given index with associated
+ * signal closure. does NO error checking!
+ */
+#define signal_replace_udata_with_closure(L, idx)   \
+    lua_pushvalue(L, idx);                          \
+    lua_gettable(L, LUA_REGISTRYINDEX);             \
+    if (idx != -1 && idx != lua_gettop(L)) lua_replace(L, idx)
+
+/*
+ * generates SAMPLE_BUFFER_SIZE next values.
+ * arguments are current time and sample rate
+ * returns table with values and new time
  */
 static int signal_closure(lua_State *L)
 {
-    double t = luaL_checknumber(L, -1);
-    /* TODO: Stereo signal - channel upvalue */
-    double freq, amp, phase; /* channel */
-
-    GET_FUNCTION_OR_NUMBER(freq,  L, 2, t);
-    GET_FUNCTION_OR_NUMBER(amp,   L, 3, t);
-    GET_FUNCTION_OR_NUMBER(phase, L, 4, t);
-
-    /* call generator function */
-    lua_pushvalue(L, lua_upvalueindex(1));
-    lua_pushnumber(L, t * freq + phase);
-    lua_call(L, 1, 1);
-    if (lua_isnil(L, -1))
-        return luaL_error(L, "Generator returned 'nil' when number was expected.");
-
-    t = lua_tonumber(L, -1);
-    lua_pop(L, 1);
-    lua_pushnumber(L, t * amp);
-    return 1;
-}
-
-/*
- * replaces signal at arg with its closure (at meta(arg).signal)
- */
-static void signal_replace_udata_with_closure(lua_State* L, int arg)
-{
-    /* check if item at arg is a signal and put its metatable on the stack */
-    if (!lua_getmetatable(L, arg)) {
-        luaL_typerror(L, arg, "signal");
-        return; /* just to clarify that we stop here */
-    }
-
-    lua_getfield(L, -1, "__index");
-    lua_getfield(L, LUA_REGISTRYINDEX, "lhc.signal");
-    if (!lua_rawequal(L, -1, -2)) {
-        luaL_typerror(L, arg, "signal");
-        return;
-    }
-    lua_pop(L, 2);
-
-    /* get signal function */
-    lua_getfield(L, -1, "signal");
-    lua_remove(L, -2); /* remove metatable */
-    if (arg < 0) --arg;
-    lua_replace(L, arg);
-}
-
-static int check_al_error(int line)
-{
-    int error = alGetError();
-
-    if (error != AL_NO_ERROR) {
-        fprintf(stderr, "OpenAL error in signal.c:%d: (%d) ", line, error);
-        switch (error) {
-            case AL_INVALID_NAME: printf("invalid name\n"); break;
-            case AL_INVALID_ENUM: printf("invalid enum\n"); break;
-            case AL_INVALID_VALUE: printf("invalid value\n"); break;
-            case AL_INVALID_OPERATION: printf("invalid operation\n"); break;
-            case AL_OUT_OF_MEMORY: printf("out of memory\n"); break;
-            default: printf("I don't know\n");
-        }
-    }
-    return error;
-}
-#define CHECK_AL_ERROR() check_al_error(__LINE__ - 1)
-
-static void signal_fill_buffer(Signal* s, lua_State* L, size_t buf, double rate)
-{
+    double t = luaL_checknumber(L, 1);
+    double rate = luaL_checknumber(L, 2);
+    double timestep = 1. / rate;
+    double freq;
     size_t i;
-    double value;
-    PCMSample samples[SAMPLE_CHUNK_LENGTH];
-    CRITICAL_SECTION(&lock_lua_state) 
+
+    lua_createtable(L, SAMPLE_BUFFER_SIZE, 0);
+    for (i = 1; i <= SAMPLE_BUFFER_SIZE; ++i, t += timestep) 
     {
-        for (i = 0; i < SAMPLE_CHUNK_LENGTH; ++i, ++s->time) 
-        {
-            lua_getfield(L, 1, "signal");
-            lua_pushnumber(L, s->time / rate);
+        lua_pushvalue(L, lua_upvalueindex(2));
+        if (lua_isfunction(L, -1)) {
+            lua_pushnumber(L, t);
             lua_call(L, 1, 1);
-            value = lua_tonumber(L, -1);
-            lua_pop(L, 1);
-            if (value > 1.) value = 1.;
-            else if (value < -1.) value = -1.;
-            samples[i] = value * INTERVAL;
         }
-    }
+        freq = lua_tonumber(L, -1);
+        lua_pop(L, 1);
 
-    alBufferData(buf, AL_FORMAT_MONO16, samples, SAMPLE_CHUNK_LENGTH * sizeof(PCMSample), rate);
-    CHECK_AL_ERROR();
+        lua_pushvalue(L, lua_upvalueindex(1));
+        lua_pushnumber(L, t * freq);
+        lua_call(L, 1, 1);
+        lua_rawseti(L, -2, i);
+    }
+    lua_pushnumber(L, t);
+
+    return 2; /* table and new time */
 }
 
 /*
- * create samples and play them
+ * creates 3 functions:
+ *  signal_[name]_closure         combines 2 signals using OP
+ *  signal_[name]_number_closure  combines signal and number using OP
+ *  signal_[name]                 inspects arguments on the stack and
+ *                                creates signal with corrosponding closure
+ *  only signal_[name] will be exported to lua
  */
-static void* signal_play_thread(void* arg)
+#define SIGNAL_OPERATOR(name, OP)                                \
+static int signal_##name##_closure(lua_State* L)                 \
+{                                                                \
+    double t = luaL_checknumber(L, 1);                           \
+    double rate = luaL_checknumber(L, 2);                        \
+    double val;                                                  \
+    size_t i;                                                    \
+                                                                 \
+    /* call signal 1, omit returned new t */                     \
+    lua_pushvalue(L, lua_upvalueindex(1));                       \
+    lua_pushnumber(L, t);                                        \
+    lua_pushnumber(L, rate);                                     \
+    lua_call(L, 2, 1);                                           \
+                                                                 \
+    /* call signal 2 */                                          \
+    lua_pushvalue(L, lua_upvalueindex(2));                       \
+    lua_pushnumber(L, t);                                        \
+    lua_pushnumber(L, rate);                                     \
+    lua_call(L, 2, 2);                                           \
+                                                                 \
+    /* for i=1,N do tbl2[i] = tbl1[i] <OP> tbl2[i] end */        \
+    for (i = 1; i <= SAMPLE_BUFFER_SIZE; ++i)                    \
+    {                                                            \
+        lua_rawgeti(L, -3, i);                                   \
+        val = lua_tonumber(L, -1);                               \
+        lua_rawgeti(L, -3, i);                                   \
+        val OP##= lua_tonumber(L, -1);                           \
+        lua_pop(L, 2); /* remove signal1 and signal2 values*/    \
+                                                                 \
+        if (val >  1.) val =  1.;                                \
+        if (val < -1.) val = -1.;                                \
+        lua_pushnumber(L, val);                                  \
+        lua_rawseti(L, -3, i);                                   \
+    }                                                            \
+    /* new values in second table, t_new is already there */     \
+    return 2;                                                    \
+}                                                                \
+                                                                 \
+static int signal_##name##_number_closure(lua_State* L)          \
+{                                                                \
+    double t = luaL_checknumber(L, 1);                           \
+    double rate = luaL_checknumber(L, 2);                        \
+    double val, c;                                               \
+    size_t i;                                                    \
+                                                                 \
+    c = lua_tonumber(L, lua_upvalueindex(1));                    \
+                                                                 \
+    /* call signal */                                            \
+    lua_pushvalue(L, lua_upvalueindex(2));                       \
+    lua_pushnumber(L, t);                                        \
+    lua_pushnumber(L, rate);                                     \
+    lua_call(L, 2, 2);                                           \
+                                                                 \
+    /* for i=1,N do tbl[i] = tbl[i] + c end */                   \
+    for (i = 1; i <= SAMPLE_BUFFER_SIZE; ++i)                    \
+    {                                                            \
+        lua_rawgeti(L, -2, i);                                   \
+        val = lua_tonumber(L, -1) OP c;                          \
+        lua_pop(L, 1);                                           \
+                                                                 \
+        if (val >  1.) val =  1.;                                \
+        if (val < -1.) val = -1.;                                \
+        lua_pushnumber(L, val);                                  \
+        lua_rawseti(L, -3, i);                                   \
+    }                                                            \
+    /* new values in second table, t_new is already there */     \
+    return 2;                                                    \
+}                                                                \
+                                                                 \
+static int signal_##name(lua_State *L)                           \
+{                                                                \
+    lua_settop(L, 2);                                            \
+    if (lua_isnumber(L, 2)) /* swap 1st with 2nd element */      \
+        lua_insert(L, 1);                                        \
+                                                                 \
+    if (!signal_userdata_is_signal(L, 2))                        \
+        return luaL_typerror(L, 2, "signal");                    \
+    signal_replace_udata_with_closure(L, 2);                     \
+                                                                 \
+    if (lua_isnumber(L, 1)) {                                    \
+        lua_pushcclosure(L, &signal_##name##_number_closure, 2); \
+    } else if (signal_userdata_is_signal(L, 1)) {                \
+        signal_replace_udata_with_closure(L, 1);                 \
+        lua_pushcclosure(L, &signal_##name##_closure, 2);        \
+    } else {                                                     \
+        return luaL_typerror(L, 1, "signal or number");          \
+    }                                                            \
+    signal_new_from_closure(L);                                  \
+    return 1;                                                    \
+}
+
+static void signal_new_from_closure(lua_State *L);
+SIGNAL_OPERATOR(add, +);
+SIGNAL_OPERATOR(mul, *);
+
+
+static int signal_play_buffer(const void *in, void *out,
+        unsigned long fpb, const PaStreamCallbackTimeInfo *time,
+        PaStreamCallbackFlags flags, void *udata)
 {
-    Signal* signal = (Signal*)arg;
+    Signal *s = (Signal*)udata;
+    (void)in;
+    (void)flags;
+    (void)time;
 
-    lua_State* L = signal->L;
-    ALenum source_status;
-    ALuint buffer;
+    assert(fpb == SAMPLE_BUFFER_SIZE);
+    memcpy(out, s->buffers[ s->current_buffer ], fpb * sizeof(float));
+    s->read_buffer_empty = 1;
+
+    return 0;
+}
+
+static void* signal_fill_buffer_thread(void* arg)
+{
+    unsigned int i, k;
     double rate;
-    size_t i;
+    Signal* s = (Signal*)arg;
+    float *buffer;
+    PaStream *stream;
 
+    lua_State* L = s->L;
     CRITICAL_SECTION(&lock_lua_state) 
     {
         lua_getglobal(L, "defaults");
         lua_getfield(L, -1, "samplerate");
         rate = luaL_checknumber(L, -1);
-        lua_pop(L, 2);
+        lua_settop(L, 1);
     }
 
-    alGenBuffers(SAMPLE_BUFFER_COUNT, signal->buffers);
-    CHECK_AL_ERROR();
-    alGenSources(1, &(signal->source));
-    CHECK_AL_ERROR();
-
+    /* initially fill all buffers */
     for (i = 0; i < SAMPLE_BUFFER_COUNT; ++i) 
-        signal_fill_buffer(signal, L, signal->buffers[i], rate);
-
-    alSourceQueueBuffers(signal->source, SAMPLE_BUFFER_COUNT, signal->buffers);
-    CHECK_AL_ERROR();
-    alSourcePlay(signal->source);
-    CHECK_AL_ERROR();
-
-    while (signal->status == SIGNAL_PLAYING) 
     {
-        alGetSourcei(signal->source, AL_BUFFERS_PROCESSED, &source_status);
-        CHECK_AL_ERROR();
-        if (source_status > 0) 
+        buffer = s->buffers[i];
+
+        CRITICAL_SECTION(&lock_lua_state) 
         {
-            alSourceUnqueueBuffers(signal->source, 1, &buffer);
-            CHECK_AL_ERROR();
-            signal_fill_buffer(signal, L, buffer, rate);
-            alSourceQueueBuffers(signal->source, 1, &buffer);
-            CHECK_AL_ERROR();
+            lua_pushvalue(L, 1);
+            signal_replace_udata_with_closure(L, -1);
+            lua_pushnumber(L, s->t);
+            lua_pushnumber(L, rate);
+            lua_call(L, 2, 2);
+            /* lua tables start at index 1, but arrays dont. */
+            for (k = 1; k <= SAMPLE_BUFFER_SIZE; ++k) 
+            {
+                lua_rawgeti(L, -2, k);
+                buffer[k-1] = lua_tonumber(L, -1);
+                lua_pop(L, 1);
+            }
+            s->t = lua_tonumber(L, -1);
+            lua_pop(L, 2);
         }
-
-        alGetSourcei(signal->source, AL_SOURCE_STATE, &source_status);
-        CHECK_AL_ERROR();
-        if (source_status != AL_PLAYING) {
-            alSourcePlay(signal->source);
-            CHECK_AL_ERROR();
-        }
-
-        alGetSourcei(signal->source, AL_BUFFERS_PROCESSED, &source_status);
-        CHECK_AL_ERROR();
     }
+    s->current_buffer = 0;
+    s->read_buffer_empty = 0;
+
+    /* start portaudio stream */
+    PA_ASSERT_CMD(Pa_OpenDefaultStream(&stream,
+                0, 1, paFloat32, rate, SAMPLE_BUFFER_SIZE,
+                signal_play_buffer, s));
+
+    PA_ASSERT_CMD(Pa_StartStream(stream));
+
+    /* TODO: this is essentially just double buffering. do more */
+    /* fill buffers if needed */
+    s->status = SIGNAL_PLAYING;
+    while (s->status == SIGNAL_PLAYING) 
+    {
+        /* see if portaudio has finished reading the buffer */
+        if (s->read_buffer_empty) 
+        {
+            buffer = s->buffers[ s->current_buffer ];
+            /* advance to next buffer before filling the empty one */
+            s->read_buffer_empty = 0;
+            s->current_buffer = (s->current_buffer + 1) % SAMPLE_BUFFER_COUNT;
+
+            CRITICAL_SECTION(&lock_lua_state) 
+            {
+                lua_pushvalue(L, 1);
+                signal_replace_udata_with_closure(L, -1);
+                lua_pushnumber(L, s->t);
+                lua_pushnumber(L, rate);
+                lua_call(L, 2, 2);
+                for (k = 1; k <= SAMPLE_BUFFER_SIZE; ++k) 
+                {
+                    lua_rawgeti(L, -2, k);
+                    buffer[k-1] = lua_tonumber(L, -1);
+                    lua_pop(L, 1);
+                }
+                s->t = lua_tonumber(L, -1);
+            }
+        }
+        lhc_thread_yield();
+    }
+
+    PA_ASSERT_CMD(Pa_StopStream(stream));
+    PA_ASSERT_CMD(Pa_CloseStream(stream));
+    s->status = SIGNAL_UNDEFINED;
 
     return NULL;
 }
 
-/*
- * create thread to play sample
- */
-static int signal_play(lua_State* L)
+static int signal_play(lua_State *L)
 {
-    Signal* signal = signal_checkudata(L, 1);
-
-    if (signal->status == SIGNAL_PLAYING)
+    Signal *s = signal_checkudata(L, 1);
+    
+    if (s->status != SIGNAL_UNDEFINED)
         return 0;
 
+    lua_settop(L, 1);
     lua_getglobal(L, "signals");
     lua_getfield(L, -1, "threads");
     lua_pushvalue(L, 1);
-    signal->L = lua_newthread(L);
+    s->L = lua_newthread(L);
     lua_settable(L, -3);
 
-    /* move signal metatable to signal stack */
-    lua_getmetatable(L, 1);
-    lua_xmove(L, signal->L, 1);
+    /* push userdatum on top of new thread stack */
+    lua_pushvalue(L, 1);
+    lua_xmove(L, s->L, 1);
 
-    signal->status = SIGNAL_PLAYING;
-
-    if (lhc_thread_create(&(signal->thread), signal_play_thread, signal)) 
-    {
+    if (lhc_thread_create(&(s->thread), signal_fill_buffer_thread, s))
         fprintf(stderr, "Cannot start signal thread!\n");
-    }
 
     return 0;
 }
 
-/*
- * stop playing of source
- */
 static int signal_stop(lua_State *L)
 {
-    Signal* signal = signal_checkudata(L, 1);
-    if (signal->status != SIGNAL_PLAYING)
-        return 0;
-
-    signal->status = SIGNAL_STOPPED;
-    lhc_thread_join(signal->thread, NULL);
-    alSourceStop(signal->source);
+    Signal *s = signal_checkudata(L, 1);
+    if (s->status == SIGNAL_PLAYING) {
+        s->status = SIGNAL_STOPPED;
+        s->t = 0;
+        lhc_thread_join(s->thread, NULL);
+    }
     return 0;
 }
 
-/*
- * stop playing and delete OpenAL resources
- */
 static int signal_gc(lua_State *L)
 {
-    Signal* signal = lua_touserdata(L, 1);
-    if (signal->status == SIGNAL_PLAYING) 
-    {
-        signal->status = SIGNAL_STOPPED;
-        lhc_thread_join(signal->thread, NULL);
-
-        alSourceStop(signal->source);
-        alSourcei(signal->source, AL_BUFFER, 0);
+    Signal *s = signal_checkudata(L, 1);
+    if (s->status == SIGNAL_PLAYING) {
+        s->status = SIGNAL_STOPPED;
+        lhc_thread_join(s->thread, NULL);
+        /* TODO: more work here? if not, delete this and use signal_stop instead */
     }
 
-    alDeleteBuffers(SAMPLE_BUFFER_COUNT, signal->buffers);
-    alDeleteSources(1, &(signal->source));
     return 0;
 }
 
-/* Generic programming magic follows: */
-#define MAKE_NUMBER_SIGNAL_ARIT_CLOSURE(OP) \
-    double sval = lua_tonumber(L, lua_upvalueindex(1)); \
-lua_pushvalue(L, lua_upvalueindex(2));  \
-lua_insert(L, 1);                       \
-lua_call(L, 1, 1);                      \
-sval OP##= lua_tonumber(L, -1);         \
-lua_pop(L, 1);                          \
-lua_pushnumber(L, sval);                \
-return 1                               
-
-#define MAKE_SIGNAL_SIGNAL_ARIT_CLOSURE(OP) \
-    double sval;                            \
-/* double function argument and put signal functions
- * on stack so we can call them. Stack contents after this:
- * function1 t function2 t
- */                                     \
-    lua_pushvalue(L, 1);                    \
-    lua_pushvalue(L, lua_upvalueindex(1));  \
-    lua_insert(L, -3);                      \
-    lua_pushvalue(L, lua_upvalueindex(2));  \
-    lua_insert(L, -2);                      \
-    \
-    lua_call(L, 1, 1);                      \
-    sval = lua_tonumber(L, -1);             \
-    lua_pop(L, 1);                          \
-    \
-    lua_call(L, 1, 1);                      \
-    sval OP##= lua_tonumber(L, -1);         \
-    lua_pop(L,1);                           \
-    lua_pushnumber(L, sval);                \
-    return 1
-
-static int signal_add_number_signal_closure(lua_State *L)
-{
-    MAKE_NUMBER_SIGNAL_ARIT_CLOSURE(+);
-}
-
-static int signal_add_signal_signal_closure(lua_State *L)
-{
-    MAKE_SIGNAL_SIGNAL_ARIT_CLOSURE(+);
-}
-
-static int signal_mul_number_signal_closure(lua_State *L)
-{
-    MAKE_NUMBER_SIGNAL_ARIT_CLOSURE(*);
-}
-
-static int signal_mul_signal_signal_closure(lua_State *L)
-{
-    MAKE_SIGNAL_SIGNAL_ARIT_CLOSURE(*);
-}
-
+#define SET_FUNCTION_FIELD(L, func, name) lua_pushcfunction(L, func); lua_setfield(L, -2, name)
 /* 
- * sum of signals. s + s -> s, s + number -> s 
+ * expects a C-Closure on top of the stack.
+ * leaves the associated userdata on the stack.
  */
-static int signal_add(lua_State *L)
+static void signal_new_from_closure(lua_State *L)
 {
-    /* if the call was signal + number, swap the two top elements,
-     * so it appears the call was number + signal
-     */ 
-    if (lua_isnumber(L, -1)) {
-        lua_insert(L, -2);
+    Signal *s = lua_newuserdata(L, sizeof(Signal));
+    s->t = 0;
+    s->read_buffer_empty = 1;
+    s->status = SIGNAL_UNDEFINED;
+
+    /* lua_settable() needs stack to be '... udata udata closure' */
+    lua_pushvalue(L, -1);
+    lua_pushvalue(L, -3);
+    lua_remove(L, -4);
+    lua_settable(L, LUA_REGISTRYINDEX); /* registry[udata] = closure */
+
+    /* set metatable */
+    if (luaL_newmetatable(L, "lhc.signal")) 
+    {
+        SET_FUNCTION_FIELD(L, signal_gc, "__gc");
+        SET_FUNCTION_FIELD(L, signal_add, "__add");
+        SET_FUNCTION_FIELD(L, signal_mul, "__mul");
+        SET_FUNCTION_FIELD(L, signal_play, "play");
+        SET_FUNCTION_FIELD(L, signal_stop, "stop");
+        /* set metatable as index table */
+        lua_pushvalue(L, -1);
+        lua_setfield(L, -2, "__index");
     }
+    lua_setmetatable(L, -2);
 
-    signal_replace_udata_with_closure(L, -1);
-    if (lua_isnumber(L, -2)) {
-        lua_pushcclosure(L, &signal_add_number_signal_closure, 2);
-    } else {
-        signal_replace_udata_with_closure(L, -2);
-        lua_pushcclosure(L, &signal_add_signal_signal_closure, 2);
-    } 
-
-    signal_new_from_closure(L);
-    return 1;
+    /* userdata is left on the stack */
 }
 
 /*
- * signal - number = signal + (-number)
+ * looks for tbl[tbl_name] where tbl is the value at the given index
+ * if the value is not a number or a function, get defaults[def_name]
  */
-static int signal_sub(lua_State *L)
+static void push_arg_or_default(lua_State* L, int index, const char* tbl_name, const char* def_name)
 {
-    double t;
-    if (!signal_userdata_is_signal(L, -2))
-        return luaL_typerror(L, 1, "signal");
-
-    t = luaL_checknumber(L, -1);
-    lua_pushnumber(L, -t);
-    lua_replace(L, -2);
-
-    return signal_add(L);
+    lua_getfield(L, index, tbl_name);
+    if (!lua_isnumber(L, -1) && !lua_isfunction(L, -1)) 
+    {
+        lua_pop(L, 1);
+        lua_getglobal(L, "defaults");
+        lua_getfield(L, -1, def_name);
+        lua_remove(L, -2);
+        if (lua_isnil(L, -1)) 
+            luaL_error(L, "I hate it when that happens!");
+    }
 }
 
-/* 
- * multiplication of signals. s * s -> s, s * number -> s 
+/*
+ * create new signal userdata
  */
-static int signal_mul(lua_State *L)
+static int l_signal(lua_State* L)
 {
-    /* if the call was signal * number, swap the two top elements,
-     * so it appears the call was number * signal
-     */ 
-    if (lua_isnumber(L, -1)) {
-        lua_insert(L, -2);
-    }
+    if (!lua_istable(L, 1))
+        return luaL_error(L, "expected table argument");
 
-    signal_replace_udata_with_closure(L, -1);
-    if (lua_isnumber(L, -2)) {
-        lua_pushcclosure(L, &signal_mul_number_signal_closure, 2);
-    } else {
-        signal_replace_udata_with_closure(L, -2);
-        lua_pushcclosure(L, &signal_mul_signal_signal_closure, 2);
-    }
-    signal_new_from_closure(L);
-
-    return 1;
-}
-
-/* 
- * get table[sname], where table is at index index. 
- * if table[sname] is not a number, get defaults[name].
- */
-#define GET_NUMBER_OR_DEFAULT(index, sname, name) do { lua_getfield(L, (index), sname); \
-    if (!lua_isnumber(L, -1) && !lua_isfunction(L, -1)) { \
-        lua_pop(L, 1); \
-        lua_getglobal(L, "defaults"); \
-        lua_getfield(L, -1, name); \
-        lua_remove(L, -2); \
-    } } while(0)
-
-/* 
- * create new signal from table argument:
- * { generator, f = freq, a = amp, p = phase }
- * All arguments but generator are optional
- */
-static int l_signal(lua_State *L)
-{
-    if (!lua_istable(L, -1))
-        return luaL_error(L, "error: expected table as argument.");
-
-    lua_pushnumber(L, 1);
-    lua_rawget(L, -2);
+    lua_rawgeti(L, 1, 1);
     if (!lua_isfunction(L, -1))
-        return luaL_error(L, "error: expected generator to be a function.");
+        return luaL_error(L, "generator has to be a function");
 
-    GET_NUMBER_OR_DEFAULT(-2, "f", "freq");
-    GET_NUMBER_OR_DEFAULT(-3, "a", "amp");
-    GET_NUMBER_OR_DEFAULT(-4, "p", "phase");
-    lua_pushcclosure(L, &signal_closure, 4); 
+    push_arg_or_default(L, 1, "f", "freq");
+    /* stack contains: table generator freq */
+    lua_pushcclosure(L, &signal_closure, 2);
     signal_new_from_closure(L);
-    /* remove argument table to leave stack as it was before */
+
+    /* remove argument table */
     lua_remove(L, -2);
     return 1;
-}
-
-/* 
- * transform closure on top of the stack to Signal userdata 
- * with the following metatable:
- * { signal  = closure,
- *   __index = global metatable { play, stop }
- *   __gc    = delete resources,
- *   __add   = signal + signal|number,
- *   __sub   = signal - number,
- *   __mul   = signal * signal|number }
- */
-static void signal_new_from_closure(lua_State *L) 
-{
-    size_t i;
-    /* create metatable for userdata and put signal function in it */
-    lua_newtable(L);
-    lua_insert(L, -2);
-    lua_setfield(L, -2, "signal");
-
-    /* arithmetics and destructor */
-    lua_pushcfunction(L, signal_gc);
-    lua_setfield(L, -2, "__gc");
-    lua_pushcfunction(L, signal_mul);
-    lua_setfield(L, -2, "__mul");
-    lua_pushcfunction(L, signal_add);
-    lua_setfield(L, -2, "__add");
-    lua_pushcfunction(L, signal_sub);
-    lua_setfield(L, -2, "__sub");
-
-    /* get global metatable and set as __index for oo-access*/
-    if (luaL_newmetatable(L, "lhc.signal")) {
-        /* create new table only if needed */
-        lua_pushcfunction(L, signal_play);
-        lua_setfield(L, -2, "play");
-        lua_pushcfunction(L, signal_stop);
-        lua_setfield(L, -2, "stop");
-    }
-    lua_setfield(L, -2, "__index");
-
-    /* finally, create the userdata and set the above table as its meta */
-    Signal* s = lua_newuserdata(L, sizeof(Signal));
-    for (i = 0; i < SAMPLE_BUFFER_COUNT; ++i)
-        s->buffers[i] = 0;
-    s->source = 0;
-    s->time = 0;
-    s->status = SIGNAL_UNDEFINED;
-    lua_insert(L, -2);
-    lua_setmetatable(L, -2);
 }
 
 /* 

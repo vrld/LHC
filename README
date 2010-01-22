@@ -1,10 +1,8 @@
 === Nedded ===
-OpenAL
-ALUT
 Lua 5.1
-GNU Readline
+PortAudio v19
+GNU Readline (optional, but recommended)
 CMake >= 2.6
-
 
 === Build instructions ===
 
@@ -35,39 +33,32 @@ To use:
 Example:
     $ ./lhc 
     lhc> -- play some signals
-    lhc> saw = sig{gen.saw, f=220, a=.4}
+    lhc> saw = sig{gen.saw, f=220}
     lhc> saw:play()
+    lhc> saw:stop()
     lhc> sin = sig{gen.sin, f=440}
     lhc> sin:play()
     lhc> signals.stop()
     
     lhc> -- mix samples 
-    lhc> sawsin = sin + saw
+    lhc> sawsin = sin * .7 + saw * .3
     lhc> sawsin:play()
-    lhc> signals.stop()
+    lhc> sawsin:stop()
     
     lhc> -- modulate signals
     lhc> mod = sig{gen.sin,f=100} * sig{gen.triangle,f=1}
     lhc> mod:play()
     lhc> mod:stop()
-    lhc> mod2 = (sig{gen.sin, f=220, a=.2} + .8 * sig{gen.sin}) * sig{gen.sin,f=1}
+    lhc> mod2 = (sig{gen.sin, f=220} * .2 + .8 * sig{gen.sin}) * sig{gen.sin,f=1}
     lhc> mod2:play()
     lhc> signals.clear()
 
-    lhc> -- the frequency, amplitude and phase can be a function, too:
-    lhc> defaults.length = 30
-    lhc> function amp(t) return .5 + gen.sin(t) / 2 end
-    lhc> function rise(t) return 300 * (1 + t / defaults.length) + gen.sin(t) end
-    lhc> r = sig{gen.sin, f=rise, a=amp}
+    lhc> -- the frequency can be a function, too:
+    lhc> length = 30
+    lhc> function rise(t) return 300 * (1 + t / length) + gen.sin(t) end
+    lhc> r = sig{gen.sin, f=rise}
     lhc> r:play()
     lhc> r:stop()
-
-    lhc> -- ahhh, the ocean...
-    lhc> function ocean(t) return .15 * amp(.1*t) + .05 end
-    lhc> o = sig{gen.brownNoise, a = function(t) return .15 * amp(.1*t) + .05 end}
-    lhc> o:play()
-    lhc> rocean = r + o
-    lhc> o:stop() rocean:play()
 
 
 === Lua interface ===
@@ -78,8 +69,6 @@ tables, that can be used by Lua.
 defauts: This table stores some default values.
     defaults.samplerate = 44100 -- this: http://en.wikipedia.org/wiki/Sample_rate
     defaults.freq = 440         -- default frequency for signals
-    defaults.amp = 1            -- default amplitude for signals. Reasonable values are in [0,1]
-    defaults.phase = 0          -- default phase for signals
 
 Generators:
     A generator accepts values in [0,1] and returns values in [-1,1],
@@ -96,15 +85,13 @@ Generators:
 Signals:
     Signals are the playable items in LHC. To create a signal, use the functions:
 
-    signal{ generator[, f = <number>, a = <number>, p = <number>] } and sig{ ... }:
+    signal{ generator[, f = <number or function>] } and sig{ ... }:
         Creates a signal function using a generator. Optional arguments are:
           f ... frequency of the signal. If not set, defaults.freq is used.
-          a ... amplitude of the signal. If not set, defaults.amp is used.
-          p ... phase of the signal. If not set, defaults.phase is used.
         
-          f, a and p are either numbers or functions of t.
-
         Notice this function takes a table argument, so it uses {} instead of ()!
+
+        To turn down a signal, multiply it by a number (see below).
 
     Playback is done via:
         signal:play() and
@@ -131,7 +118,7 @@ Signals:
 
 
 === License ===
-Copyright (c) 2009 Matthias Richter
+Copyright (c) 2010 Matthias Richter
 
 Permission is hereby granted, free of charge, to any person
 obtaining a copy of this software and associated documentation

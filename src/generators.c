@@ -25,6 +25,7 @@
  *  OTHER DEALINGS IN THE SOFTWARE.
  */
 #include "generators.h"
+#include "config.h"
 #include <lauxlib.h>
 #include <math.h>
 #include <stdlib.h>
@@ -33,15 +34,8 @@ static const double PI = 3.1415926535897;
 
 #define GENERATOR(name, function) \
     static int generator_ ##name(lua_State* L) { \
-        double t = luaL_checknumber(L, 1); \
-        double step = luaL_checknumber(L, 2); \
-        int bsize = luaL_checkint(L, 3); \
-        int i; \
-        lua_newtable(L); \
-        for (i = 1; i <= bsize; ++i, t+= step) { \
-            lua_pushnumber(L, (function)); \
-            lua_rawseti(L, -2, i); \
-        } \
+        double t = fmod(luaL_checknumber(L, 1), 1); \
+        lua_pushnumber(L, (function)); \
         return 1; \
     }
 
@@ -49,26 +43,18 @@ GENERATOR(sin,        sin(t * 2 * PI));
 GENERATOR(triangle,   t<=.5 ? 4.*t-1. : 3.-4.*t);
 GENERATOR(saw,        2. * t - 1.);
 GENERATOR(rect,       t<=.5 ? 1. : -1.);
-GENERATOR(whiteNoise, (rand() % (1 << 15)) / (double)(1<<14) - 1.);
+GENERATOR(whiteNoise, ((void)t, (rand() % (1 << 15)) / (double)(1<<14) - 1.));
 
 static int generator_brownNoise_closure(lua_State *L)
 {
     double last = lua_tonumber(L, lua_upvalueindex(1));
-    int bsize = luaL_checkint(L, 3);
-    int i;
-
-    lua_newtable(L);
-    for (i = 0; i < bsize; ++i) {
-        last = (rand() % (1 << 15)) / (double)(1 << 14) - 1. + last;
-        if (last < -1.) last = -1.;
-        if (last >  1.) last =  1.;
-        lua_pushnumber(L, last);
-        lua_rawseti(L, -2, i);
-    }
-
-    /* save last random value for next call of this generator */
+    last = (rand() % (1 << 15)) / (double)(1 << 14) - 1. + last;
+    if (last < -1.) last = -1.;
+    if (last >  1.) last =  1.;
     lua_pushnumber(L, last);
     lua_replace(L, lua_upvalueindex(1));
+
+    lua_pushnumber(L, last);
     return 1;
 }
 

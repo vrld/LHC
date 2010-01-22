@@ -1,7 +1,7 @@
 /*********************************************************************
  *  This file is part of LHC
  *
- *  Copyright (c) 2009 Matthias Richter
+ *  Copyright (c) 2010 Matthias Richter
  * 
  *  Permission is hereby granted, free of charge, to any person
  *  obtaining a copy of this software and associated documentation
@@ -25,16 +25,17 @@
  *  OTHER DEALINGS IN THE SOFTWARE.
  */
 #include <string.h>
-#include <AL/alut.h>
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
 #include <stdio.h>
+#include <portaudio.h>
 
 #include "generators.h"
 #include "signal.h"
 #include "thread.h"
 #include "commandline.h"
+#include "pa_assert.h"
 
 lhc_mutex lock_lua_state;
 
@@ -45,8 +46,7 @@ void dispatch_coroutines(lua_State* L);
 #define SET_DEFAULT(field, value) lua_pushnumber(L, (value)); lua_setfield(L, -2, (field))
 int main(int argc, char** argv)
 {
-    alutInit(&argc, argv);
-    alGetError();
+    PA_ASSERT_CMD(Pa_Initialize());
 
     lhc_mutex_init(&lock_lua_state);
 
@@ -58,8 +58,6 @@ int main(int argc, char** argv)
     lua_createtable(L, 0, 5);
     SET_DEFAULT("samplerate", 44100);
     SET_DEFAULT("freq", 440);
-    SET_DEFAULT("amp", 1);
-    SET_DEFAULT("phase", 0);
     lua_setglobal(L, "defaults");
 
     lua_newtable(L);
@@ -81,7 +79,7 @@ int main(int argc, char** argv)
 
     lua_close(L);
 
-    alutExit();
+    PA_ASSERT_CMD(Pa_Terminate());
     return 0;
 }
 

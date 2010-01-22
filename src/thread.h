@@ -38,6 +38,7 @@
 #define lhc_thread_join(thread, retval) ???
 #define lhc_thread_cancel(thread) ???
 #define lhc_thread_exit(thread) ???
+#define lhc_thread_yield() ???
 
 #define lhc_mutex_init(mutex) pthread_mutex_init((mutex), NULL)
 #define lhc_mutex_destroy(mutex) pthread_mutex_destroy((mutex))
@@ -56,6 +57,8 @@
 #define lhc_thread_join(thread, retval) pthread_join((thread), (retval))
 #define lhc_thread_cancel(thread) pthread_cancel((thread))
 #define lhc_thread_exit(thread) pthread_exit(thread)
+int pthread_yield(void);
+#define lhc_thread_yield() pthread_yield()
 
 #define lhc_mutex_init(mutex) pthread_mutex_init((mutex), NULL)
 #define lhc_mutex_destroy(mutex) pthread_mutex_destroy((mutex))
