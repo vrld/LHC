@@ -74,6 +74,8 @@ if (ALL_FOUND)
         lhc.c
         generators.c
         signal.c
+        signal_operators.c
+        signal_player.c
     )
     add_executable(lhc ${SRCS})
     target_link_libraries(lhc ${LIBS})

@@ -1,7 +1,7 @@
 /*********************************************************************
  *  This file is part of LHC
  *
- *  Copyright (c) 2009 Matthias Richter
+ *  Copyright (c) 2010 Matthias Richter
  * 
  *  Permission is hereby granted, free of charge, to any person
  *  obtaining a copy of this software and associated documentation
@@ -24,38 +24,8 @@
  *  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  *  OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef SIGNAL_H
-#define SIGNAL_H
 
 #include <lua.h>
-#include "config.h"
-#include "thread.h"
 
-enum { SIGNAL_PLAYING, SIGNAL_STOPPED };
-
-typedef struct {
-    double t;
-    lua_State *L;
-    float buffers[SAMPLE_BUFFER_COUNT][SAMPLE_BUFFER_SIZE];
-    int current_buffer;
-    int read_buffer_empty;
-    int status;
-
-    lhc_thread thread;
-} Signal;
-
-int luaopen_signal(lua_State *L);
-int signal_userdata_is_signal(lua_State* L, int idx);
-Signal* signal_checkudata(lua_State* L, int idx);
-void signal_new_from_closure(lua_State *L);
-
-/*
- * replaces userdata at given index with associated
- * signal closure. does NO error checking!
- */
-#define signal_replace_udata_with_closure(L, idx)   \
-    lua_pushvalue(L, idx);                          \
-    lua_gettable(L, LUA_REGISTRYINDEX);             \
-    if (idx != -1 && idx != lua_gettop(L)) lua_replace(L, idx)
-
-#endif /* SIGNAL_H */
+int signal_play(lua_State *L);
+int signal_stop(lua_State *L);
