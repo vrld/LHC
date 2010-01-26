@@ -34,11 +34,10 @@
 #define UVINDEX_SIGNAL 1
 #define UVINDEX_FFT_INFO 2
 
-#define FILTER_WINDOW_POS FILTER_WINDOW_SIZE - SAMPLE_BUFFER_SIZE
-
 typedef struct {
     fftw_plan forward;
     fftw_plan backward;
+    double buffer[FILTER_WINDOW_SIZE];
     double real[FILTER_WINDOW_SIZE];
     fftw_complex *complex;
 } fft_info;
@@ -48,9 +47,9 @@ static fft_info* filter_setup(lua_State* L)
     fft_info *fft = (fft_info*)lua_touserdata(L, lua_upvalueindex(UVINDEX_FFT_INFO));
     size_t i;
 
-    /* shift fft->real to the left */
-    for (i = 0; i < FILTER_WINDOW_POS; ++i)
-        fft->real[i] = fft->real[i+SAMPLE_BUFFER_SIZE];
+    /* shift fft->buffer to the left */
+    for (i = 0; i < FILTER_WINDOW_SIZE - SAMPLE_BUFFER_SIZE; ++i)
+        fft->buffer[i] = fft->buffer[i+SAMPLE_BUFFER_SIZE];
 
     /* call signal with t, rate */
     lua_pushvalue(L, lua_upvalueindex(UVINDEX_SIGNAL));
@@ -61,7 +60,7 @@ static fft_info* filter_setup(lua_State* L)
     for (i = 1; i <= SAMPLE_BUFFER_SIZE; ++i)
     {
         lua_rawgeti(L, -2, i);
-        fft->real[FILTER_WINDOW_POS+i-1] = lua_tonumber(L, -1);
+        fft->buffer[FILTER_WINDOW_SIZE - SAMPLE_BUFFER_SIZE + i-1] = lua_tonumber(L, -1);
         lua_pop(L,1);
     }
     fftw_execute(fft->forward);
@@ -72,10 +71,11 @@ static fft_info* filter_setup(lua_State* L)
 static int filter_end(lua_State *L, fft_info *fft)
 {
     size_t i;
+
     fftw_execute(fft->backward);
     for (i = 1; i <= SAMPLE_BUFFER_SIZE; ++i)
     {
-        lua_pushnumber(L, fft->real[FILTER_WINDOW_POS+i-1]/(double)FILTER_WINDOW_SIZE);
+        lua_pushnumber(L, fft->real[i-1] / (double)FILTER_WINDOW_SIZE);
         lua_rawseti(L, -3, i);
     }
     return 2;
@@ -141,7 +141,26 @@ static int filter_bandpass(lua_State *L)
 
 static int filter_custom(lua_State *L)
 {
+    double rate = luaL_checknumber(L, 2);
     fft_info *fft = filter_setup(L);
+
+    size_t i = 0;
+    /* filter function takes 3 arguments (freq, real, imag) 
+     * and returns 2 values (real, imag)
+     * a lowpass could be written like this:
+     *   s:filter(function(f,r,i) if f < 440 then return r,i else return 0,0 end)
+     */
+    for (i = 0; i < FILTER_WINDOW_SIZE/2; ++i) 
+    {
+        lua_pushvalue(L, lua_upvalueindex(3));
+        lua_pushnumber(L, to_freq(i, rate));
+        lua_pushnumber(L, fft->complex[i][0]);
+        lua_pushnumber(L, fft->complex[i][1]);
+        lua_call(L, 3, 2);
+        fft->complex[i][0] = lua_tonumber(L, -2);
+        fft->complex[i][1] = lua_tonumber(L, -1);
+        lua_pop(L, 2);
+    }
 
     return filter_end(L, fft);
 }
@@ -163,12 +182,12 @@ static void filter_create_fft_info(lua_State *L)
     fft->complex = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * FILTER_WINDOW_SIZE);
 
     fft->forward = fftw_plan_dft_r2c_1d(FILTER_WINDOW_SIZE, 
-            fft->real, fft->complex, FFTW_ESTIMATE);
+            fft->buffer, fft->complex, FFTW_ESTIMATE);
     fft->backward = fftw_plan_dft_c2r_1d(FILTER_WINDOW_SIZE,
             fft->complex, fft->real, FFTW_ESTIMATE);
 
     for (i = 0; i < FILTER_WINDOW_SIZE; ++i)
-        fft->real[i] = .0;
+        fft->buffer[i] = .0;
     
     /* set destructor function to ensure the plans are freed */
     if (luaL_newmetatable(L, "lhc.signal.filter")) 
