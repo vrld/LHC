@@ -65,8 +65,6 @@ static int signal_##name##_closure(lua_State* L)                 \
         val OP##= lua_tonumber(L, -1);                           \
         lua_pop(L, 2); /* remove signal1 and signal2 values*/    \
                                                                  \
-        if (val >  1.) val =  1.;                                \
-        if (val < -1.) val = -1.;                                \
         lua_pushnumber(L, val);                                  \
         lua_rawseti(L, -3, i);                                   \
     }                                                            \
@@ -96,8 +94,6 @@ static int signal_##name##_number_closure(lua_State* L)          \
         val = lua_tonumber(L, -1) OP c;                          \
         lua_pop(L, 1);                                           \
                                                                  \
-        if (val >  1.) val =  1.;                                \
-        if (val < -1.) val = -1.;                                \
         lua_pushnumber(L, val);                                  \
         lua_rawseti(L, -3, i);                                   \
     }                                                            \

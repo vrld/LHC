@@ -62,6 +62,7 @@ static void* signal_fill_buffer_thread(void* arg)
     Signal* s = (Signal*)arg;
     float *buffer;
     PaStream *stream;
+    float val;
 
     lua_State* L = s->L;
     CRITICAL_SECTION(&lock_lua_state) 
@@ -88,7 +89,10 @@ static void* signal_fill_buffer_thread(void* arg)
             for (k = 1; k <= SAMPLE_BUFFER_SIZE; ++k) 
             {
                 lua_rawgeti(L, -2, k);
-                buffer[k-1] = lua_tonumber(L, -1);
+                val = lua_tonumber(L, -1);
+                if (val > 1.) val = 1.;
+                else if (val < -1.) val = -1.;
+                buffer[k-1] = val;
                 lua_pop(L, 1);
             }
             s->t = lua_tonumber(L, -1);
@@ -128,7 +132,9 @@ static void* signal_fill_buffer_thread(void* arg)
                 for (k = 1; k <= SAMPLE_BUFFER_SIZE; ++k) 
                 {
                     lua_rawgeti(L, -2, k);
-                    buffer[k-1] = lua_tonumber(L, -1);
+                    if (val > 1.) val = 1.;
+                    else if (val < -1.) val = -1.;
+                    buffer[k-1] = val;
                     lua_pop(L, 1);
                 }
                 s->t = lua_tonumber(L, -1);
