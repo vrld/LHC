@@ -24,5 +24,9 @@
  *  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  *  OTHER DEALINGS IN THE SOFTWARE.
  */
+#ifndef SIGNAL_OPERATORS_H
+#define SIGNAL_OPERATORS_H
 int signal_mul(lua_State *L);
 int signal_add(lua_State *L);
+
+#endif /* SIGNAL_OPERATORS_H */
