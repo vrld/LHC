@@ -132,6 +132,7 @@ static void* signal_fill_buffer_thread(void* arg)
                 for (k = 1; k <= SAMPLE_BUFFER_SIZE; ++k) 
                 {
                     lua_rawgeti(L, -2, k);
+                    val = lua_tonumber(L, -1);
                     if (val > 1.) val = 1.;
                     else if (val < -1.) val = -1.;
                     buffer[k-1] = val;
