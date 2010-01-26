@@ -24,8 +24,12 @@
  *  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  *  OTHER DEALINGS IN THE SOFTWARE.
  */
+#ifndef SIGNAL_PLAYER_H
+#define SIGNAL_PLAYER_H
 
 #include <lua.h>
 
 int signal_play(lua_State *L);
 int signal_stop(lua_State *L);
+
+#endif /* SIGNAL_PLAYER_H */
