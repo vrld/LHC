@@ -14,6 +14,13 @@ set(ALL_FOUND TRUE)
 option(WITH_GNU_READLINE "Use GNU readline for input" ON)
 set(SAMPLE_BUFFER_SIZE 1024 CACHE STRING "Length of a sample buffer")
 set(SAMPLE_BUFFER_COUNT 2 CACHE STRING "Number of buffers for playing signals. Has to be >= 2")
+set(FILTER_WINDOW_SIZE 32768 CACHE STRING "Length of a sample buffer")
+
+math(EXPR FILTER_WINDOW_SIZE_OK "${FILTER_WINDOW_SIZE} % ${SAMPLE_BUFFER_SIZE}")
+if (NOT (FILTER_WINDOW_SIZE_OK EQUAL 0))
+    math(EXPR RFWS "${SAMPLE_BUFFER_SIZE} * 32")
+    message(SEND_ERROR "Chosse the filter window size to be a multiple of the sampe buffer size (${RFWS} for example).")
+endif (NOT (FILTER_WINDOW_SIZE_OK EQUAL 0))
 
 # PortAudio
 find_library(PA_LIBRARY NAMES portaudio)
@@ -40,6 +47,22 @@ else (LUA51_FOUND)
     message("Cannot find Lua 5.1")
     set(ALL_FOUND FALSE)
 endif (LUA51_FOUND)
+
+# FFTW3
+find_path(FFTW3_INCLUDE_DIR fftw3.h)
+find_library(FFTW3_LIBRARY NAMES fftw3) 
+
+if (FFTW3_INCLUDE_DIR AND FFTW3_LIBRARY)
+    set(FFTW3_FOUND TRUE)
+endif (FFTW3_INCLUDE_DIR AND FFTW3_LIBRARY)
+
+if (FFTW3_FOUND)
+    include_directories(${FFTW3_INCLUDE_DIR})
+    set(LIBS ${LIBS} ${FFTW3_LIBRARY})
+else (FFTW3_FOUND)
+    message("Cannot find FFTW3")
+    set(ALL_FOUND FALSE)
+endif (FFTW3_FOUND)
 
 # readline
 if (WITH_GNU_READLINE)
@@ -76,9 +99,10 @@ if (ALL_FOUND)
         signal.c
         signal_operators.c
         signal_player.c
+        filter.c
     )
     add_executable(lhc ${SRCS})
     target_link_libraries(lhc ${LIBS})
 else (ALL_FOUND)
-    message (error "stopping.")
+    message (SEND_ERROR "stopping.")
 endif(ALL_FOUND)
