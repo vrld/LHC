@@ -64,6 +64,7 @@ static const struct luaL_Reg generators[] = {
     {"saw", generator_saw},
     {"rect", generator_rect},
     {"whiteNoise", generator_whiteNoise},
+    {"wn", generator_whiteNoise},
     {NULL, NULL}
 };
 
@@ -73,5 +74,7 @@ int luaopen_generators(lua_State *L)
     lua_pushnumber(L, 0);
     lua_pushcclosure(L, &generator_brownNoise_closure, 1);
     lua_setfield(L, -2, "brownNoise");
+    lua_getfield(L, -1, "brownNoise");
+    lua_setfield(L, -2, "bn");
     return 1;
 }
