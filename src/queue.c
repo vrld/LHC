@@ -30,7 +30,12 @@ void queue_push(Queue* q, const char* val)
 
     CRITICAL_SECTION( &q->lock )
     {
-        q->tail->next = tmp;
+        if (q->head == NULL)
+            q->head = tmp;
+
+        if (q->tail != NULL)
+            q->tail->next = tmp;
+
         q->tail = tmp;
     }
 }
@@ -66,3 +71,4 @@ char* queue_front(Queue *q)
 
     return val;
 }
+

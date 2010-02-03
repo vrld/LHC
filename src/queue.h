@@ -26,4 +26,10 @@ void queue_pop(Queue* q);
  */
 char* queue_front(Queue *q);
 
+/* WARNING WARNING WARNING:
+ * the returned value is only valid until the next queue_pop!
+ * (this also explains the rather verbose name)
+ */
+#define queue_front_nocopy_dont_use_this_if_not_sure(q) (q)->head->val
+
 #endif /* QUEUE_H */
