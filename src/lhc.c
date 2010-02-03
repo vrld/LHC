@@ -36,19 +36,24 @@
 #include "thread.h"
 #include "commandline.h"
 #include "pa_assert.h"
+#include "queue.h"
 
 lhc_mutex lock_lua_state;
 
+Queue* command_queue;
+int commandline_active = 0;
+
 void exec_file(lua_State* L, const char* file);
-void do_commandline(lua_State* L);
-void dispatch_coroutines(lua_State* L);
+void* fetch_command(void*);
 
 #define SET_DEFAULT(field, value) lua_pushnumber(L, (value)); lua_setfield(L, -2, (field))
 int main(int argc, char** argv)
 {
-    PA_ASSERT_CMD(Pa_Initialize());
+    const char* command;
+    int error;
 
     lhc_mutex_init(&lock_lua_state);
+    command_queue = queue_init();
 
     lua_State *L = lua_open();
     luaL_openlibs(L);
@@ -75,7 +80,33 @@ int main(int argc, char** argv)
     if (argc > 1)
         exec_file(L, argv[1]);
 
-    do_commandline(L);
+    commandline_active = 1;
+    lhc_thread cmdline_thread;
+    if (lhc_thread_create(&cmdline_thread, fetch_command, NULL))
+    {
+        lua_close(L);
+        fprintf(stderr, "Cannot start commandline thread!");
+        return 1;
+    }
+
+    PA_ASSERT_CMD(Pa_Initialize());
+    while (commandline_active) 
+    {
+        while (queue_empty(command_queue))
+            lhc_thread_yield();
+
+        command = queue_front_nocopy_dont_use_this_if_not_sure(command_queue);
+        CRITICAL_SECTION(&lock_lua_state)
+        {
+            error = luaL_loadbuffer(L, command, strlen(command), "line") || lua_pcall(L, 0,0,0);
+            if (error)
+            {
+                fprintf(stderr, "\nerror: %s\n", lua_tostring(L, -1));
+                lua_pop(L, 1);
+            }
+        }
+        queue_pop(command_queue);
+    }
 
     lua_close(L);
 
@@ -102,9 +133,9 @@ void exec_file(lua_State* L, const char* file)
     }
 }
 
-void do_commandline(lua_State* L)
+void* fetch_command(void* _)
 {
-    int error;
+    (void)_;
     char in_buffer[LHC_CMDLINE_INPUT_BUFFER_SIZE];
     char *input = in_buffer;
 #ifdef WITH_GNU_READLINE
@@ -113,19 +144,18 @@ void do_commandline(lua_State* L)
 
     while (read_line(input, "lhc> "))
     {
+        if (strstr(input, "exit") == input)
+            break;
         if (input[0] != 0 && input[0] != '\n') 
         {
             save_line(input);
-            CRITICAL_SECTION(&lock_lua_state)
-            {
-                error = luaL_loadbuffer(L, input, strlen(input), "line") || lua_pcall(L, 0,0,0);
-                if (error)
-                {
-                    fprintf(stderr, "error: %s\n", lua_tostring(L, -1));
-                    lua_pop(L, 1);
-                }
-            }
-            free_line(input);
+            queue_push(command_queue, input);
         }
     }
+    /* prevent  while (queue_empty(command_queue))  to run forever
+     * and give the user a nice farwell message
+     */
+    queue_push(command_queue, "print 'Bye'");
+    commandline_active = 0;
+    return NULL;
 }
