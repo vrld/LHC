@@ -27,10 +27,14 @@
 #ifndef FILTER_H
 #define FILTER_H
 
-#include <lua.h>
-int signal_lowpass(lua_State *L);
-int signal_highpass(lua_State *L);
-int signal_bandpass(lua_State *L);
-int signal_filter(lua_State *L);
+int get_filter_width(double bw); /* bw -> bandwidth of rolloff */
+int window_sinc_hamming(double* out, size_t size, double f, double rate);
+int window_sinc_blackman(double* out, size_t size, double f, double rate);
+void spectral_inversion(double* filter, size_t size);
+
+int filter_lowpass(double* filter, size_t size, double f, double rate);
+int filter_highpass(double* filter, size_t size, double f, double rate);
+int filter_bandpass(double* filter, size_t size, double f1, double f2, double rate);
+int filter_bandreject(double* filter, size_t size, double f1, double f2, double rate);
 
 #endif /* FILTER_H */
