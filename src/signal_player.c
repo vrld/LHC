@@ -119,8 +119,8 @@ static void* signal_fill_buffer_thread(void* arg)
         {
             buffer = s->buffers[ s->current_buffer ];
             /* advance to next buffer before filling the empty one */
-            s->read_buffer_empty = 0;
             s->current_buffer = (s->current_buffer + 1) % SAMPLE_BUFFER_COUNT;
+            s->read_buffer_empty = 0;
 
             CRITICAL_SECTION(&lock_lua_state) 
             {
