@@ -28,13 +28,13 @@
 #define FILTER_H
 
 int get_filter_width(double bw); /* bw -> bandwidth of rolloff */
-int window_sinc_hamming(double* out, size_t size, double f, double rate);
-int window_sinc_blackman(double* out, size_t size, double f, double rate);
-void spectral_inversion(double* filter, size_t size);
+int window_sinc_hamming(double* out, int size, double f, double rate);
+int window_sinc_blackman(double* out, int size, double f, double rate);
+void spectral_inversion(double* filter, int size);
 
-int filter_lowpass(double* filter, size_t size, double f, double rate);
-int filter_highpass(double* filter, size_t size, double f, double rate);
-int filter_bandpass(double* filter, size_t size, double f1, double f2, double rate);
-int filter_bandreject(double* filter, size_t size, double f1, double f2, double rate);
+int filter_lowpass(double* filter, int size, double f, double rate);
+int filter_highpass(double* filter, int size, double f, double rate);
+int filter_bandpass(double* filter, int size, double f1, double f2, double rate);
+int filter_bandreject(double* filter, int size, double f1, double f2, double rate);
 
 #endif /* FILTER_H */
