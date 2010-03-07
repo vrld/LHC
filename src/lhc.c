@@ -84,6 +84,7 @@ int main(int argc, char** argv)
     lua_setglobal(L, "signals");
 
     /* load file  */
+    PA_ASSERT_CMD(Pa_Initialize());
     if (argc > 1)
         exec_file(L, argv[1]);
 
@@ -96,7 +97,6 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    PA_ASSERT_CMD(Pa_Initialize());
     while (commandline_active) 
     {
         while (queue_empty(command_queue))
