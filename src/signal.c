@@ -27,7 +27,7 @@
 #include "signal.h"
 #include "signal_operators.h"
 #include "signal_player.h"
-#include "filter.h"
+#include "signal_filters.h"
 
 #include <lauxlib.h>
 
@@ -141,15 +141,14 @@ void signal_new_from_closure(lua_State *L)
         SET_FUNCTION_FIELD(L, signal_gc, "__gc");
         SET_FUNCTION_FIELD(L, signal_add, "__add");
         SET_FUNCTION_FIELD(L, signal_mul, "__mul");
+
         SET_FUNCTION_FIELD(L, signal_play, "play");
         SET_FUNCTION_FIELD(L, signal_stop, "stop");
-        SET_FUNCTION_FIELD(L, signal_lowpass, "lowpass");
-        SET_FUNCTION_FIELD(L, signal_lowpass, "lp");
-        SET_FUNCTION_FIELD(L, signal_highpass, "highpass");
-        SET_FUNCTION_FIELD(L, signal_highpass, "hp");
-        SET_FUNCTION_FIELD(L, signal_bandpass, "bandpass");
-        SET_FUNCTION_FIELD(L, signal_bandpass, "bp");
-        SET_FUNCTION_FIELD(L, signal_filter, "filter");
+
+        SET_FUNCTION_FIELD(L, signal_filter_lowpass, "lp");
+        SET_FUNCTION_FIELD(L, signal_filter_highpass, "hp");
+        SET_FUNCTION_FIELD(L, signal_filter_bandpass, "bp");
+        SET_FUNCTION_FIELD(L, signal_filter_bandreject, "br");
         /* set metatable as index table */
         lua_pushvalue(L, -1);
         lua_setfield(L, -2, "__index");

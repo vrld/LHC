@@ -96,10 +96,11 @@ if (ALL_FOUND)
     add_subdir(SRCS src
         lhc.c
         generators.c
+        filter_helper.c
         signal.c
         signal_operators.c
         signal_player.c
-        filter.c
+        signal_filters.c
         queue.c
     )
     add_executable(lhc ${SRCS})
