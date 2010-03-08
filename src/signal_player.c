@@ -184,8 +184,9 @@ int signal_stop(lua_State *L)
     if (s->status == SIGNAL_PLAYING) {
         s->status = SIGNAL_STOPPED;
         s->t = 0;
+        /* this will cause a deadlock. 
         if (s->thread)
-            lhc_thread_join(s->thread, NULL);
+            lhc_thread_join(s->thread, NULL); */
     }
     return 0;
 }
