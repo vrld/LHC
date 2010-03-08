@@ -69,13 +69,13 @@ int main(int argc, char** argv)
         lua_newtable(L);
         lua_setfield(L, -2, "threads");
 
-        const char* stop_all_signals = "for _s_, _ in pairs(signals.threads) do"
+        const char* stop_all_signals = "for _s_, _ in pairs(signals.threads) do "
                                             "_s_:stop() "
                                         "end";
         luaL_loadbuffer(L, stop_all_signals, strlen(stop_all_signals), "signals.stop()");
         lua_setfield(L, -2, "stop");
 
-        const char* clear_all_signals = "for _s_, _ in pairs(signals.threads) do"
+        const char* clear_all_signals = "for _s_, _ in pairs(signals.threads) do "
                                             "_s_:stop() "
                                             "signals.threads[_s_] = nil "
                                         "end";
