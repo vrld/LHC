@@ -12,9 +12,8 @@ endif (CMAKE_COMPILER_IS_GNUCC)
 set(ALL_FOUND TRUE)
 
 option(WITH_GNU_READLINE "Use GNU readline for input" ON)
-set(SAMPLE_BUFFER_SIZE 1024 CACHE STRING "Length of a sample buffer")
+set(SAMPLE_BUFFER_SIZE 16384 CACHE STRING "Length of a sample buffer")
 set(SAMPLE_BUFFER_COUNT 2 CACHE STRING "Number of buffers for playing signals. Has to be >= 2")
-set(FILTER_WINDOW_SIZE 32768 CACHE STRING "Length of a sample buffer")
 
 math(EXPR FILTER_WINDOW_SIZE_OK "${FILTER_WINDOW_SIZE} % ${SAMPLE_BUFFER_SIZE}")
 if (NOT (FILTER_WINDOW_SIZE_OK EQUAL 0))

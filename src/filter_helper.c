@@ -58,20 +58,42 @@ static void sinc(double* out, int size, double f, double rate)
     }
 }
 
-static void apply_window_hamming(double* sinc, int size)
+#if 0 
+/* von Hann window */
+static void apply_window(double* sinc, int size)
 {
     double pim = 2. * PI / (double)(size - 1);
     int i;
     for (i = 0; i < size; ++i)
-        sinc[i] *= .54 - .46 * cos(pim * (double)i);
+        sinc[i] *= .5 - .5 * cos(pim * (double)i);
 }
-
-static void apply_window_blackman(double* sinc, int size)
+/* Blackman window */
+static void apply_window(double* sinc, int size)
 {
     double pim = 2. * PI / (double)(size - 1);
     int i;
+    static const double a0 = .42;
+    static const double a1 = .5;
+    static const double a2 = .08;
     for (i = 0; i < size; ++i)
-        sinc[i] *= .42 - .5 * cos(pim * (double)i) + .08 * cos(2. * pim * (double)i);
+        sinc[i] *= a0 - a1 * cos(pim * (double)i) 
+                      + a2 * cos(2. * pim * (double)i);
+}
+#endif
+/* Blackman-Harris window */
+static void apply_window(double* sinc, int size)
+{
+    double pim = 2. * PI / (double)(size - 1) * (double)(size-1)/2.;
+    int i;
+    static const double a0 = .35875;
+    static const double a1 = .48829;
+    static const double a2 = .14128;
+    static const double a3 = .01168;
+    for (i = 0; i < size; ++i) {
+        sinc[i] *= a0 - a1 * cos(pim * (double)i) 
+                      + a2 * cos(2. * pim * (double)i)
+                      - a3 * cos(3. * pim * (double)i);
+    }
 }
 
 static void normalize(double* out, int size)
@@ -82,28 +104,6 @@ static void normalize(double* out, int size)
         K += out[i];
     for (i = 0; i < size; ++i)
         out[i] /= K;
-}
-
-int window_sinc_hamming(double* out, int size, double f, double rate)
-{
-    if (size % 2 != 1)
-        return -1;
-
-    sinc(out, size, f, rate);
-    apply_window_hamming(out, size);
-    normalize(out, size);
-    return 0;
-}
-
-int window_sinc_blackman(double* out, int size, double f, double rate)
-{
-    if (size % 2 != 1)
-        return -1;
-
-    sinc(out, size, f, rate);
-    apply_window_blackman(out, size);
-    normalize(out, size);
-    return 0;
 }
 
 void spectral_inversion(double* filter, int size)
@@ -120,21 +120,22 @@ int filter_lowpass(double* filter, int size, double f, double rate)
     if (size % 2 != 1)
         return -1;
 
-    window_sinc_hamming(filter, size, f, rate);
+    sinc(filter, size, f, rate);
+    apply_window(filter, size);
+    normalize(filter, size);
     return 0;
 }
 
 int filter_highpass(double* filter, int size, double f, double rate)
 {
-    if (size % 2 != 1)
+    if (filter_lowpass(filter, size, f, rate) != 0)
         return -1;
 
-    window_sinc_hamming(filter, size, f, rate);
     spectral_inversion(filter, size);
     return 0;
 }
 
-int filter_bandpass(double* filter, int size, double f1, double f2, double rate)
+int filter_bandpass(double* filter, int size, double f_low, double f_high, double rate)
 {
     if (size % 2 != 1)
         return -1;
@@ -144,19 +145,27 @@ int filter_bandpass(double* filter, int size, double f1, double f2, double rate)
     if (!temp) 
         return -2;
 
-    filter_lowpass(filter, size, f2, rate);
-    filter_highpass(temp, size, f1, rate);
+    if (size % 2 != 1)
+        return -1;
+
+    filter_lowpass(filter, size, f_high, rate);
+    filter_lowpass(temp, size, f_low, rate);
 
     for (i = 0; i < size; ++i)
-        filter[i] += temp[i];
-
+        filter[i] -= temp[i];
     free(temp);
+
     return 0;
 }
 
-int filter_bandreject(double* filter, int size, double f1, double f2, double rate)
+int filter_bandreject(double* filter, int size, double f_low, double f_high, double rate)
 {
-    return filter_bandpass(filter, size, f1, f2, rate);
+    int s = filter_bandpass(filter, size, f_low, f_high, rate);
+    if (s != 0)
+        return s;
+    spectral_inversion(filter, size);
+
+    return 0;
 }
 
 #endif /* FILTER_HELPER_C */

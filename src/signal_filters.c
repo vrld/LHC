@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <lauxlib.h>
 #include <fftw3.h>
+#include <math.h>
 
 #define FFT_SIZE (2 * SAMPLE_BUFFER_SIZE)
 typedef struct filter_info 
@@ -122,7 +123,7 @@ static int signal_create_filter(lua_State *L, enum FilterType filter_type)
 {
     filter_info* info;
 
-    double freq1, freq2, rate, bw = .015625;
+    double freq1, freq2, rate, bw = 4. / (double)(SAMPLE_BUFFER_SIZE);
     int kernel_size, i;
 
     if (!signal_userdata_is_signal(L, 1))
@@ -189,13 +190,6 @@ static int signal_create_filter(lua_State *L, enum FilterType filter_type)
     for (i = kernel_size; i < FFT_SIZE; ++i)
         info->signal[i] = 0.;
 
-#if 0 /* DEBUG OUTPUT */
-    FILE* out = fopen("filter", "w");
-    for (i = 0; i < FFT_SIZE; ++i)
-        fprintf(out, "%d %lf\n", i, info->signal[i]);
-    fclose(out);
-#endif
-
     fftw_execute(info->forward);
     /* copy transformed data. neccessary as forward will overwrite
      * this every time it is executed.
@@ -207,12 +201,6 @@ static int signal_create_filter(lua_State *L, enum FilterType filter_type)
         info->filter[i][1] = info->signal_fft[i][1];
         info->filtered_old[i % SAMPLE_BUFFER_SIZE] = 0.;
     }
-#if 0 /* MORE DEBUG OUTPUT */
-    out = fopen("filter_fft", "w");
-    for (i = 0; i < SAMPLE_BUFFER_SIZE; ++i) 
-        fprintf(out, "%d %lf %lf\n", i, info->filter[i][0], info->filter[i][1]);
-    fclose(out);
-#endif
 
     /* stack: signal, f, bw, signal, filter info */
     lua_pushcclosure(L, &signal_filter_closure, 2);

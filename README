@@ -1,6 +1,7 @@
 === Nedded ===
 Lua 5.1
 PortAudio v19
+FFTW3
 GNU Readline (optional, but recommended)
 CMake >= 2.6
 
@@ -79,8 +80,8 @@ Generators:
       gen.triangle
       gen.saw
       gen.rect
-      gen.whiteNoise
-      gen.brownNoise
+      gen.whiteNoise       aka  gen.wn
+      gen.brownNoise       aka  gen.bn
 
 Signals:
     Signals are the playable items in LHC. To create a signal, use the functions:
@@ -111,11 +112,73 @@ Signals:
         signals.stop()      -- stops all signals
         signals.clear()     -- stops and deletes all signals
 
-        signals.threads     -- table containing signals threads. dont touch unless you know what you do.
+        signals.threads     -- table containing signals threads. dont touch 
+                            -- unless you know what you do.
                             -- this may be useful if you have done something like
-                            -- 'sig{gen.sin, f = very complicated}:play()' and want access to this
-                            -- signal.
+                            -- 'sig{gen.sin, f = very complicated}:play()' and 
+                            -- want access to this signal.
 
+Filter:
+    Filter take a signal and return a signal. There are four meaningful filters:
+
+    - Lowpass, which filters out all frequencies above a cutoff frequency.
+      In code (reality is a bit more complex though):
+
+        function lowpass(freqency, max) 
+            if freqency > max then return 0 end
+            return frequency
+        end
+
+    - Highpass, which filters out all frequencies below a cutoff frequency:
+
+        function lowpass(freqency, min) 
+            if freqency < min then return 0 end
+            return frequency
+        end
+
+    - Bandpass, which filters out all frequencies not between two cutoff 
+      frequencies:
+
+        function lowpass(freqency, min, max) 
+            if freqency < min or frequency > max then 
+                return 0 
+            end
+            return frequency
+        end
+
+    - Bandreject, which is the opposite of bandpass:
+
+        function lowpass(freqency, min, max) 
+            if freqency > min or frequency < max then 
+                return 0 
+            end
+            return frequency
+        end
+
+    LHC handles filters like this (s and t are signals)
+
+    - Lowpass:
+        t = s:lp(440) -- pass only frequencies < 440
+
+    - Highpass: 
+        t = s:hp(440) -- pass only frequencies > 440
+
+    - Bandpass:
+        t = s:bp(430, 450) -- pass frequencies in [430,450]
+
+    - Bandreject:
+        t = s:br(430, 450) -- pass frequencies < 430 and > 450
+
+
+    Examples:
+        flow = sig{gen.bn}:lp(440)
+        flow:play()
+
+        pointless = (sig{gen.sin,f=440}*.7 + sig{gen.sin,f=660}*.3):hp(500)
+        pointless:play()
+
+        substr = sig{gen.wn}:bp(435,445) * 9
+        substr:play()
 
 === License ===
 Copyright (c) 2010 Matthias Richter
