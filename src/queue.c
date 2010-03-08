@@ -28,7 +28,7 @@ void queue_push(Queue* q, const char* val)
     tmp->val = (char*)malloc(strlen(val) + 1);
     strcpy(tmp->val, val);
 
-    CRITICAL_SECTION( &q->lock )
+    lhc_mutex_lock( &q->lock );
     {
         if (q->head == NULL)
             q->head = tmp;
@@ -38,6 +38,7 @@ void queue_push(Queue* q, const char* val)
 
         q->tail = tmp;
     }
+    lhc_mutex_unlock( &q->lock );
 }
 
 void queue_pop(Queue *q)
@@ -47,13 +48,14 @@ void queue_pop(Queue *q)
 
     struct QueueItem *tmp;
 
-    CRITICAL_SECTION( &q->lock )
+    lhc_mutex_lock( &q->lock );
     {
         tmp = q->head;
         q->head = tmp->next;
         if (q->head == NULL)
             q->tail = NULL;
     }
+    lhc_mutex_unlock( &q->lock );
 
     free(tmp->val);
     free(tmp);
@@ -63,11 +65,12 @@ void queue_pop(Queue *q)
 char* queue_front(Queue *q)
 {
     char* val;
-    CRITICAL_SECTION( &q->lock )
+    lhc_mutex_lock( &q->lock );
     {
         val = malloc(strlen(q->head->val) + 1);
         strcpy(val, q->head->val);
     }
+    lhc_mutex_unlock( &q->lock );
 
     return val;
 }

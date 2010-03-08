@@ -99,20 +99,24 @@ int main(int argc, char** argv)
 
     while (commandline_active) 
     {
-        while (queue_empty(command_queue))
-            lhc_thread_yield();
-
-        command = queue_front_nocopy_dont_use_this_if_not_sure(command_queue);
-        CRITICAL_SECTION(&lock_lua_state)
+        if (!queue_empty(command_queue))
         {
-            error = luaL_loadbuffer(L, command, strlen(command), "line") || lua_pcall(L, 0,0,0);
-            if (error)
+            command = queue_front_nocopy_dont_use_this_if_not_sure(command_queue);
+            lhc_mutex_lock(&lock_lua_state);
             {
-                fprintf(stderr, "\nerror: %s\n", lua_tostring(L, -1));
-                lua_pop(L, 1);
+                error = luaL_loadbuffer(L, command, strlen(command), "line") || lua_pcall(L, 0,0,0);
+                if (error)
+                {
+                    fprintf(stderr, "\rerror: %s\nlhc> ", lua_tostring(L, -1));
+                    lua_pop(L, 1);
+                }
             }
+            lhc_mutex_unlock(&lock_lua_state);
+            queue_pop(command_queue);
         }
-        queue_pop(command_queue);
+
+        /* TODO: schedule timers */ 
+        lhc_thread_yield();
     }
 
     lua_close(L);
@@ -124,11 +128,15 @@ int main(int argc, char** argv)
 void exec_file(lua_State* L, const char* file)
 {
     FILE* f = fopen(file, "r");
-    int error;
+    int error = 0;
     if (f != NULL)
     {
         fclose(f);
-        error = luaL_dofile(L, file);
+        lhc_mutex_lock(&lock_lua_state);
+        {
+            error = luaL_dofile(L, file);
+        }
+        lhc_mutex_unlock(&lock_lua_state);
         if (error)
             fprintf(stderr, "error: %s\n", lua_tostring(L, -1));
         else

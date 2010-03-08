@@ -68,6 +68,4 @@ int pthread_yield(void);
 
 #endif
 
-#define CRITICAL_SECTION(lock) for (lhc_mutex_lock((lock)); ((lhc_mutex_trylock((lock)) != 0) || (lhc_mutex_unlock((lock)) != 0)); lhc_mutex_unlock((lock)))
-
 #endif /* THREAD_H */

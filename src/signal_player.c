@@ -65,20 +65,21 @@ static void* signal_fill_buffer_thread(void* arg)
     float val;
 
     lua_State* L = s->L;
-    CRITICAL_SECTION(&lock_lua_state) 
+    lhc_mutex_lock(&lock_lua_state) ;
     {
         lua_getglobal(L, "defaults");
         lua_getfield(L, -1, "samplerate");
         rate = luaL_checknumber(L, -1);
         lua_settop(L, 1);
     }
+    lhc_mutex_unlock(&lock_lua_state) ;
 
     /* initially fill all buffers */
     for (i = 0; i < SAMPLE_BUFFER_COUNT; ++i) 
     {
         buffer = s->buffers[i];
 
-        CRITICAL_SECTION(&lock_lua_state) 
+        lhc_mutex_lock(&lock_lua_state) ;
         {
             lua_pushvalue(L, 1);
             signal_replace_udata_with_closure(L, -1);
@@ -98,6 +99,7 @@ static void* signal_fill_buffer_thread(void* arg)
             s->t = lua_tonumber(L, -1);
             lua_pop(L, 2);
         }
+        lhc_mutex_unlock(&lock_lua_state) ;
     }
     s->current_buffer = 0;
     s->read_buffer_empty = 0;
@@ -122,7 +124,7 @@ static void* signal_fill_buffer_thread(void* arg)
             s->current_buffer = (s->current_buffer + 1) % SAMPLE_BUFFER_COUNT;
             s->read_buffer_empty = 0;
 
-            CRITICAL_SECTION(&lock_lua_state) 
+            lhc_mutex_lock(&lock_lua_state) ;
             {
                 lua_pushvalue(L, 1);
                 signal_replace_udata_with_closure(L, -1);
@@ -140,6 +142,7 @@ static void* signal_fill_buffer_thread(void* arg)
                 }
                 s->t = lua_tonumber(L, -1);
             }
+            lhc_mutex_unlock(&lock_lua_state) ;
         }
         lhc_thread_yield();
     }
