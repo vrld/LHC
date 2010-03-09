@@ -101,6 +101,7 @@ if (ALL_FOUND)
         signal_player.c
         signal_filters.c
         queue.c
+        timer.c
     )
     add_executable(lhc ${SRCS})
     target_link_libraries(lhc ${LIBS})

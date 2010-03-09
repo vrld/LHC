@@ -37,6 +37,7 @@
 #include "commandline.h"
 #include "pa_assert.h"
 #include "queue.h"
+#include "timer.h"
 
 lhc_mutex lock_lua_state;
 
@@ -83,6 +84,16 @@ int main(int argc, char** argv)
         lua_setfield(L, -2, "clear");
     lua_setglobal(L, "signals");
 
+    /* timer functions */
+    lua_newtable(L); lua_setglobal(L, "timers");
+    lua_pushcfunction(L, &l_time);
+    lua_setglobal(L, "time");
+    const char* new_timer = "function timer(eta, func) "
+                                "timers[#timers+1] = {eta + time(), func} "
+                            "end";
+    luaL_loadbuffer(L, new_timer, strlen(new_timer), "timer");
+    lua_pcall(L, 0,0,0);
+
     /* load file  */
     PA_ASSERT_CMD(Pa_Initialize());
     if (argc > 1)
@@ -115,7 +126,26 @@ int main(int argc, char** argv)
             queue_pop(command_queue);
         }
 
-        /* TODO: schedule timers */ 
+        /* schedule timers */
+        lhc_mutex_lock(&lock_lua_state);
+        {
+            lua_getglobal(L, "timers");
+            lua_pushnil(L);
+            while (lua_next(L, -2) != 0) {
+                lua_rawgeti(L, -1, 1);
+                if ((long long)lua_tonumber(L, -1) <= time_ms()) {
+                    lua_rawgeti(L, -2, 2);
+                    lua_call(L, 0, 0);
+                    /* remove timed function */
+                    lua_pushvalue(L, -3);
+                    lua_pushnil(L);
+                    lua_rawset(L, -6);
+                }
+                lua_pop(L, 2);
+            }
+            lua_pop(L, 1);
+        }
+        lhc_mutex_unlock(&lock_lua_state);
         lhc_thread_yield();
     }
 
@@ -157,6 +187,7 @@ void* fetch_command(void* _)
     rl_bind_key ('\t', rl_insert); /* TODO: tab completion on globals */
 #endif
 
+    /* TODO: multiline input */
     while (read_line(input, "lhc> "))
     {
         if (strstr(input, "exit") == input)
