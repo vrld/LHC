@@ -55,14 +55,40 @@ static int signal_play_buffer(const void *in, void *out,
     return 0;
 }
 
+static void fill_buffer(lua_State* L, Signal* s, double rate, float* buffer)
+{
+    int k;
+    double val;
+    lhc_mutex_lock(&lock_lua_state);
+    {
+        lua_pushvalue(L, 1);
+        signal_replace_udata_with_closure(L, -1);
+        lua_pushnumber(L, s->t);
+        lua_pushnumber(L, rate);
+        lua_call(L, 2, 2);
+        /* lua tables start at index 1, but arrays dont. */
+        for (k = 1; k <= SAMPLE_BUFFER_SIZE; ++k) 
+        {
+            lua_rawgeti(L, -2, k);
+            val = lua_tonumber(L, -1);
+            if (val > 1.) val = 1.;
+            else if (val < -1.) val = -1.;
+            buffer[k-1] = val;
+            lua_pop(L, 1);
+        }
+        s->t = lua_tonumber(L, -1);
+        lua_pop(L, 2);
+    }
+    lhc_mutex_unlock(&lock_lua_state);
+}
+
 static void* signal_fill_buffer_thread(void* arg)
 {
-    unsigned int i, k;
+    unsigned int i;
     double rate;
     Signal* s = (Signal*)arg;
     float *buffer;
     PaStream *stream;
-    float val;
 
     lua_State* L = s->L;
     lhc_mutex_lock(&lock_lua_state) ;
@@ -76,31 +102,8 @@ static void* signal_fill_buffer_thread(void* arg)
 
     /* initially fill all buffers */
     for (i = 0; i < SAMPLE_BUFFER_COUNT; ++i) 
-    {
-        buffer = s->buffers[i];
-
-        lhc_mutex_lock(&lock_lua_state) ;
-        {
-            lua_pushvalue(L, 1);
-            signal_replace_udata_with_closure(L, -1);
-            lua_pushnumber(L, s->t);
-            lua_pushnumber(L, rate);
-            lua_call(L, 2, 2);
-            /* lua tables start at index 1, but arrays dont. */
-            for (k = 1; k <= SAMPLE_BUFFER_SIZE; ++k) 
-            {
-                lua_rawgeti(L, -2, k);
-                val = lua_tonumber(L, -1);
-                if (val > 1.) val = 1.;
-                else if (val < -1.) val = -1.;
-                buffer[k-1] = val;
-                lua_pop(L, 1);
-            }
-            s->t = lua_tonumber(L, -1);
-            lua_pop(L, 2);
-        }
-        lhc_mutex_unlock(&lock_lua_state) ;
-    }
+        fill_buffer(L, s, rate, s->buffers[i]);
+    
     s->current_buffer = 0;
     s->read_buffer_empty = 0;
 
@@ -124,25 +127,7 @@ static void* signal_fill_buffer_thread(void* arg)
             s->current_buffer = (s->current_buffer + 1) % SAMPLE_BUFFER_COUNT;
             s->read_buffer_empty = 0;
 
-            lhc_mutex_lock(&lock_lua_state) ;
-            {
-                lua_pushvalue(L, 1);
-                signal_replace_udata_with_closure(L, -1);
-                lua_pushnumber(L, s->t);
-                lua_pushnumber(L, rate);
-                lua_call(L, 2, 2);
-                for (k = 1; k <= SAMPLE_BUFFER_SIZE; ++k) 
-                {
-                    lua_rawgeti(L, -2, k);
-                    val = lua_tonumber(L, -1);
-                    if (val > 1.) val = 1.;
-                    else if (val < -1.) val = -1.;
-                    buffer[k-1] = val;
-                    lua_pop(L, 1);
-                }
-                s->t = lua_tonumber(L, -1);
-            }
-            lhc_mutex_unlock(&lock_lua_state) ;
+            fill_buffer(L, s, rate, buffer);
         }
         lhc_thread_yield();
     }
