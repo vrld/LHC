@@ -14,12 +14,7 @@ set(ALL_FOUND TRUE)
 option(WITH_GNU_READLINE "Use GNU readline for input" ON)
 set(SAMPLE_BUFFER_SIZE 16384 CACHE STRING "Length of a sample buffer")
 set(SAMPLE_BUFFER_COUNT 2 CACHE STRING "Number of buffers for playing signals. Has to be >= 2")
-
-math(EXPR FILTER_WINDOW_SIZE_OK "${FILTER_WINDOW_SIZE} % ${SAMPLE_BUFFER_SIZE}")
-if (NOT (FILTER_WINDOW_SIZE_OK EQUAL 0))
-    math(EXPR RFWS "${SAMPLE_BUFFER_SIZE} * 32")
-    message(SEND_ERROR "Chosse the filter window size to be a multiple of the sampe buffer size (${RFWS} for example).")
-endif (NOT (FILTER_WINDOW_SIZE_OK EQUAL 0))
+set(SAMPLERATE 44100 CACHE STRING "Sample rate of audio signals. Higher samplerates means better quality, but also more computing time")
 
 # PortAudio
 find_library(PA_LIBRARY NAMES portaudio)

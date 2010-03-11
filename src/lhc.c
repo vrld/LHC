@@ -62,7 +62,6 @@ int main(int argc, char** argv)
     lua_cpcall(L, luaopen_signal, NULL);
 
     lua_createtable(L, 0, 5);
-    SET_DEFAULT("samplerate", 44100);
     SET_DEFAULT("freq", 440);
     lua_setglobal(L, "defaults");
 
@@ -99,6 +98,7 @@ int main(int argc, char** argv)
     if (argc > 1)
         exec_file(L, argv[1]);
 
+    /* run commandline */
     commandline_active = 1;
     lhc_thread cmdline_thread;
     if (lhc_thread_create(&cmdline_thread, fetch_command, NULL))
@@ -198,10 +198,6 @@ void* fetch_command(void* _)
             queue_push(command_queue, input);
         }
     }
-    /* prevent  while (queue_empty(command_queue))  to run forever
-     * and give the user a nice farwell message
-     */
-    queue_push(command_queue, "print 'Bye'");
     commandline_active = 0;
     return NULL;
 }

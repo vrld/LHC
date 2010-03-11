@@ -40,20 +40,19 @@
 static int signal_##name##_closure(lua_State* L)                 \
 {                                                                \
     double t = luaL_checknumber(L, 1);                           \
-    double rate = luaL_checknumber(L, 2);                        \
     double val;                                                  \
     size_t i;                                                    \
                                                                  \
     /* call signal 1, omit returned new t */                     \
     lua_pushvalue(L, lua_upvalueindex(1));                       \
     lua_pushnumber(L, t);                                        \
-    lua_pushnumber(L, rate);                                     \
+    lua_pushnumber(L, SAMPLERATE);                               \
     lua_call(L, 2, 1);                                           \
                                                                  \
     /* call signal 2 */                                          \
     lua_pushvalue(L, lua_upvalueindex(2));                       \
     lua_pushnumber(L, t);                                        \
-    lua_pushnumber(L, rate);                                     \
+    lua_pushnumber(L, SAMPLERATE);                               \
     lua_call(L, 2, 2);                                           \
                                                                  \
     /* for i=1,N do tbl2[i] = tbl1[i] <OP> tbl2[i] end */        \
@@ -75,7 +74,6 @@ static int signal_##name##_closure(lua_State* L)                 \
 static int signal_##name##_number_closure(lua_State* L)          \
 {                                                                \
     double t = luaL_checknumber(L, 1);                           \
-    double rate = luaL_checknumber(L, 2);                        \
     double val, c;                                               \
     size_t i;                                                    \
                                                                  \
@@ -84,7 +82,7 @@ static int signal_##name##_number_closure(lua_State* L)          \
     /* call signal */                                            \
     lua_pushvalue(L, lua_upvalueindex(2));                       \
     lua_pushnumber(L, t);                                        \
-    lua_pushnumber(L, rate);                                     \
+    lua_pushnumber(L, SAMPLERATE);                               \
     lua_call(L, 2, 2);                                           \
                                                                  \
     /* for i=1,N do tbl[i] = tbl[i] + c end */                   \

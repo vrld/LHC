@@ -55,7 +55,7 @@ static int signal_play_buffer(const void *in, void *out,
     return 0;
 }
 
-static void fill_buffer(lua_State* L, Signal* s, double rate, float* buffer)
+static void fill_buffer(lua_State* L, Signal* s, float* buffer)
 {
     int k;
     double val;
@@ -64,8 +64,7 @@ static void fill_buffer(lua_State* L, Signal* s, double rate, float* buffer)
         lua_pushvalue(L, 1);
         signal_replace_udata_with_closure(L, -1);
         lua_pushnumber(L, s->t);
-        lua_pushnumber(L, rate);
-        lua_call(L, 2, 2);
+        lua_call(L, 1, 2);
         /* lua tables start at index 1, but arrays dont. */
         for (k = 1; k <= SAMPLE_BUFFER_SIZE; ++k) 
         {
@@ -85,31 +84,22 @@ static void fill_buffer(lua_State* L, Signal* s, double rate, float* buffer)
 static void* signal_fill_buffer_thread(void* arg)
 {
     unsigned int i;
-    double rate;
     Signal* s = (Signal*)arg;
     float *buffer;
     PaStream *stream;
 
     lua_State* L = s->L;
-    lhc_mutex_lock(&lock_lua_state) ;
-    {
-        lua_getglobal(L, "defaults");
-        lua_getfield(L, -1, "samplerate");
-        rate = luaL_checknumber(L, -1);
-        lua_settop(L, 1);
-    }
-    lhc_mutex_unlock(&lock_lua_state) ;
 
     /* initially fill all buffers */
     for (i = 0; i < SAMPLE_BUFFER_COUNT; ++i) 
-        fill_buffer(L, s, rate, s->buffers[i]);
+        fill_buffer(L, s, s->buffers[i]);
     
     s->current_buffer = 0;
     s->read_buffer_empty = 0;
 
     /* start portaudio stream */
     PA_ASSERT_CMD(Pa_OpenDefaultStream(&stream,
-                0, 1, paFloat32, rate, SAMPLE_BUFFER_SIZE,
+                0, 1, paFloat32, SAMPLERATE, SAMPLE_BUFFER_SIZE,
                 signal_play_buffer, s));
 
     PA_ASSERT_CMD(Pa_StartStream(stream));
@@ -127,7 +117,7 @@ static void* signal_fill_buffer_thread(void* arg)
             s->current_buffer = (s->current_buffer + 1) % SAMPLE_BUFFER_COUNT;
             s->read_buffer_empty = 0;
 
-            fill_buffer(L, s, rate, buffer);
+            fill_buffer(L, s, buffer);
         }
         lhc_thread_yield();
     }

@@ -47,7 +47,6 @@ typedef struct filter_info
 static int signal_filter_closure(lua_State* L)
 {
     double t = luaL_checknumber(L, 1);
-    double rate = luaL_checknumber(L, 2);
     int i;
     fftw_complex temp;
     filter_info* info = (filter_info*)lua_touserdata(L, 
@@ -56,7 +55,7 @@ static int signal_filter_closure(lua_State* L)
     /* call signal */
     lua_pushvalue(L, lua_upvalueindex(1));
     lua_pushnumber(L, t);
-    lua_pushnumber(L, rate);
+    lua_pushnumber(L, SAMPLERATE);
     lua_call(L, 2, 2);
 
     /* get signal values
@@ -123,7 +122,7 @@ static int signal_create_filter(lua_State *L, enum FilterType filter_type)
 {
     filter_info* info;
 
-    double freq1, freq2, rate, bw = 4. / (double)(SAMPLE_BUFFER_SIZE);
+    double freq1, freq2, bw = 4. / (double)(SAMPLE_BUFFER_SIZE);
     int kernel_size, i;
 
     if (!signal_userdata_is_signal(L, 1))
@@ -140,7 +139,6 @@ static int signal_create_filter(lua_State *L, enum FilterType filter_type)
             bw = lua_tonumber(L, 4);
     }
     freq1 = luaL_checknumber(L, 2);
-    rate = 44100.; /* TODO: fetch from global defaults */
     signal_replace_udata_with_closure(L, 1);
     lua_pushvalue(L, 1);
 
@@ -172,16 +170,16 @@ static int signal_create_filter(lua_State *L, enum FilterType filter_type)
 
     switch (filter_type) {
         case FILTER_LOWPASS:
-            filter_lowpass(info->signal, kernel_size, freq1, rate);
+            filter_lowpass(info->signal, kernel_size, freq1, SAMPLERATE);
             break;
         case FILTER_HIGHPASS:
-            filter_highpass(info->signal, kernel_size, freq1, rate);
+            filter_highpass(info->signal, kernel_size, freq1, SAMPLERATE);
             break;
         case FILTER_BANDPASS:
-            filter_bandpass(info->signal, kernel_size, freq1, freq2, rate);
+            filter_bandpass(info->signal, kernel_size, freq1, freq2, SAMPLERATE);
             break;
         case FILTER_BANDREJECT:
-            filter_bandreject(info->signal, kernel_size, freq1, freq2, rate);
+            filter_bandreject(info->signal, kernel_size, freq1, freq2, SAMPLERATE);
             break;
         default:
             luaL_error(L, "Panic: Your pants are on fire!");

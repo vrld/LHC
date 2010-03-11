@@ -78,8 +78,7 @@ Signal* signal_checkudata(lua_State* L, int idx)
 static int signal_closure(lua_State *L)
 {
     double t = luaL_checknumber(L, 1);
-    double rate = luaL_checknumber(L, 2);
-    double timestep = 1. / rate;
+    double timestep = 1. / SAMPLERATE;
     double freq;
     size_t i;
 
