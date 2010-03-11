@@ -161,9 +161,8 @@ void signal_new_from_closure(lua_State *L)
  * looks for tbl[tbl_name] where tbl is the value at the given index
  * if the value is not a number or a function, get defaults[def_name]
  */
-static void push_arg_or_default(lua_State* L, int index, const char* tbl_name, const char* def_name)
+static void push_default_if_not_valid(lua_State* L, const char* def_name)
 {
-    lua_getfield(L, index, tbl_name);
     if (!lua_isnumber(L, -1) && !lua_isfunction(L, -1)) 
     {
         lua_pop(L, 1);
@@ -171,7 +170,7 @@ static void push_arg_or_default(lua_State* L, int index, const char* tbl_name, c
         lua_getfield(L, -1, def_name);
         lua_remove(L, -2);
         if (lua_isnil(L, -1)) 
-            luaL_error(L, "I hate it when that happens!");
+            luaL_error(L, "Panic: Black hole emerged.");
     }
 }
 
@@ -184,10 +183,11 @@ static int l_signal(lua_State* L)
         return luaL_error(L, "expected table argument");
 
     lua_rawgeti(L, 1, 1);
-    if (!lua_isfunction(L, -1))
-        return luaL_error(L, "generator has to be a function");
+    push_default_if_not_valid(L, "generator");
 
-    push_arg_or_default(L, 1, "f", "freq");
+    lua_getfield(L, 1, "f");
+    push_default_if_not_valid(L, "freq");
+
     /* stack contains: table generator freq */
     lua_pushcclosure(L, &signal_closure, 2);
     signal_new_from_closure(L);

@@ -47,7 +47,6 @@ int commandline_active = 0;
 void exec_file(lua_State* L, const char* file);
 void* fetch_command(void*);
 
-#define SET_DEFAULT(field, value) lua_pushnumber(L, (value)); lua_setfield(L, -2, (field))
 int main(int argc, char** argv)
 {
     const char* command;
@@ -61,8 +60,13 @@ int main(int argc, char** argv)
     lua_cpcall(L, luaopen_generators, NULL);
     lua_cpcall(L, luaopen_signal, NULL);
 
-    lua_createtable(L, 0, 5);
-    SET_DEFAULT("freq", 440);
+    lua_createtable(L, 0, 2);
+    lua_pushnumber(L, 440);
+    lua_setfield(L, -2, "freq");
+    lua_getglobal(L, "gen");
+    lua_getfield(L, -1, "sin");
+    lua_setfield(L, -3, "generator");
+    lua_pop(L, 1);
     lua_setglobal(L, "defaults");
 
     lua_newtable(L);
