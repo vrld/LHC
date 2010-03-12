@@ -46,14 +46,12 @@ static int signal_##name##_closure(lua_State* L)                 \
     /* call signal 1, omit returned new t */                     \
     lua_pushvalue(L, lua_upvalueindex(1));                       \
     lua_pushnumber(L, t);                                        \
-    lua_pushnumber(L, SAMPLERATE);                               \
-    lua_call(L, 2, 1);                                           \
+    lua_call(L, 1, 1);                                           \
                                                                  \
     /* call signal 2 */                                          \
     lua_pushvalue(L, lua_upvalueindex(2));                       \
     lua_pushnumber(L, t);                                        \
-    lua_pushnumber(L, SAMPLERATE);                               \
-    lua_call(L, 2, 2);                                           \
+    lua_call(L, 1, 2);                                           \
                                                                  \
     /* for i=1,N do tbl2[i] = tbl1[i] <OP> tbl2[i] end */        \
     for (i = 1; i <= SAMPLE_BUFFER_SIZE; ++i)                    \
@@ -82,8 +80,7 @@ static int signal_##name##_number_closure(lua_State* L)          \
     /* call signal */                                            \
     lua_pushvalue(L, lua_upvalueindex(2));                       \
     lua_pushnumber(L, t);                                        \
-    lua_pushnumber(L, SAMPLERATE);                               \
-    lua_call(L, 2, 2);                                           \
+    lua_call(L, 1, 2);                                           \
                                                                  \
     /* for i=1,N do tbl[i] = tbl[i] + c end */                   \
     for (i = 1; i <= SAMPLE_BUFFER_SIZE; ++i)                    \

@@ -55,8 +55,7 @@ static int signal_filter_closure(lua_State* L)
     /* call signal */
     lua_pushvalue(L, lua_upvalueindex(1));
     lua_pushnumber(L, t);
-    lua_pushnumber(L, SAMPLERATE);
-    lua_call(L, 2, 2);
+    lua_call(L, 1, 2);
 
     /* get signal values
      * first half: actual signal
