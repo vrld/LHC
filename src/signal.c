@@ -28,6 +28,7 @@
 #include "signal_operators.h"
 #include "signal_player.h"
 #include "signal_filters.h"
+#include "signal_tools.h"
 
 #include <lauxlib.h>
 
@@ -152,6 +153,9 @@ void signal_new_from_closure(lua_State *L)
         SET_FUNCTION_FIELD(L, signal_filter_bandpass, "bp");
         SET_FUNCTION_FIELD(L, signal_filter_bandreject, "bandreject");
         SET_FUNCTION_FIELD(L, signal_filter_bandreject, "br");
+
+        SET_FUNCTION_FIELD(L, signal_normalize, "normalize");
+
         /* set metatable as index table */
         lua_pushvalue(L, -1);
         lua_setfield(L, -2, "__index");

@@ -50,9 +50,6 @@ Example:
     lhc> mod = sig{gen.sin,f=100} * sig{gen.triangle,f=1}
     lhc> mod:play()
     lhc> mod:stop()
-    lhc> mod2 = (sig{gen.sin, f=220} * .2 + .8 * sig{gen.sin}) * sig{gen.sin,f=1}
-    lhc> mod2:play()
-    lhc> signals.clear()
 
     lhc> -- the frequency can be a function, too:
     lhc> length = 30
@@ -60,6 +57,16 @@ Example:
     lhc> r = sig{gen.sin, f=rise}
     lhc> r:play()
     lhc> r:stop()
+
+    lhc> -- substractive synthesis is fun!
+    lhc> flow = sig{gen.bn}:lp(440)
+    lhc> flow:play()
+    lhc> defaults.generator = gen.wn
+    lhc> t = sig{}:bp(440,445) + sig{}:bp(660,667) + sig{}:bp(878,884)
+    lhc> t:play() -- this is way too quiet
+    lhc> t:stop()
+    lhc> t2 = t:normalize(.9)
+    lhc> t2:play()
 
 
 === Lua interface ===
@@ -122,23 +129,23 @@ Signals:
 Filter:
     Filter take a signal and return a signal. There are four meaningful filters:
 
-    - Lowpass, which filters out all frequencies above a cutoff frequency.
-      In code (reality is a bit more complex though):
+    Lowpass, which filters out all frequencies above a cutoff frequency.
+    In code (reality is a bit more complex though):
 
         function lowpass(freqency, max) 
             if freqency > max then return 0 end
             return frequency
         end
 
-    - Highpass, which filters out all frequencies below a cutoff frequency:
+    Highpass, which filters out all frequencies below a cutoff frequency:
 
         function lowpass(freqency, min) 
             if freqency < min then return 0 end
             return frequency
         end
 
-    - Bandpass, which filters out all frequencies not between two cutoff 
-      frequencies:
+    Bandpass, which filters out all frequencies not between two cutoff 
+    frequencies:
 
         function lowpass(freqency, min, max) 
             if freqency < min or frequency > max then 
@@ -147,7 +154,7 @@ Filter:
             return frequency
         end
 
-    - Bandreject, which is the opposite of bandpass:
+    Bandreject, which is the opposite of bandpass:
 
         function lowpass(freqency, min, max) 
             if freqency > min or frequency < max then 
@@ -156,22 +163,27 @@ Filter:
             return frequency
         end
 
-    LHC handles filters like this (s and t are signals)
 
-    - Lowpass:
+    In LHC, filters are functions on signals:
+
+    Lowpass:
+        signal.lp aka. signal.lowpass, i.e.:
         t = s:lp(440) -- pass only frequencies < 440
 
-    - Highpass: 
+    Highpass:
+        signal.hp aka. signal.highpass, i.e.:
         t = s:hp(440) -- pass only frequencies > 440
 
-    - Bandpass:
+    Bandpass:
+        signal.bp aka. signal.bandpass, i.e.:
         t = s:bp(430, 450) -- pass frequencies in [430,450]
 
-    - Bandreject:
+    Bandreject:
+        signal.br aka. signal.bandreject, i.e.:
         t = s:br(430, 450) -- pass frequencies < 430 and > 450
 
 
-    Examples:
+    Filter Examples:
         flow = sig{gen.bn}:lp(440)
         flow:play()
 
@@ -180,6 +192,20 @@ Filter:
 
         substr = sig{gen.wn}:bp(435,445) * 9
         substr:play()
+
+More stuff:
+
+    Normalisation (make quiet signals louder and loud signals more quiet):
+       
+       signals.normalize([peak]) -- will scale signal so that the maximum
+                                 -- value will be around peak
+                                 -- peak is optional.
+
+       Examples:
+
+         sig{gen.wn}:bp(440,441):normalize(.7):play()
+         (sig{}+sig{f=660}+sig{f=880}):normalize(.6):play()
+
 
 === License ===
 Copyright (c) 2010 Matthias Richter
