@@ -29,11 +29,12 @@
 #include <lauxlib.h>
 
 /*
- * creates 3 functions:
- *  signal_[name]_closure         combines 2 signals using OP
- *  signal_[name]_number_closure  combines signal and number using OP
- *  signal_[name]                 inspects arguments on the stack and
- *                                creates signal with corrosponding closure
+ * creates 4 functions:
+ *  signal_[name]_closure           combines 2 signals using OP
+ *  signal_[name]_number_closure    combines signal and number using OP
+ *  signal_[name]_function_closure  combines signal and function of t using OP
+ *  signal_[name]                   inspects arguments on the stack and
+ *                                  creates signal with corrosponding closure
  *  only signal_[name] will be exported to lua
  */
 #define SIGNAL_OPERATOR(name, OP)                                \
@@ -69,6 +70,35 @@ static int signal_##name##_closure(lua_State* L)                 \
     return 2;                                                    \
 }                                                                \
                                                                  \
+static int signal_##name##_function_closure(lua_State* L)        \
+{                                                                \
+    double t = luaL_checknumber(L, 1);                           \
+    double step = 1. / SAMPLERATE;                               \
+    double val;                                                  \
+    size_t i;                                                    \
+                                                                 \
+    /* call signal */                                            \
+    lua_pushvalue(L, lua_upvalueindex(2));                       \
+    lua_pushnumber(L, t);                                        \
+    lua_call(L, 1, 2);                                           \
+                                                                 \
+    for (i = 1; i <= SAMPLE_BUFFER_SIZE; ++i)                    \
+    {                                                            \
+        lua_rawgeti(L, -2, i);                                   \
+        val = lua_tonumber(L, -1);                               \
+        lua_pushvalue(L, lua_upvalueindex(1));                   \
+        lua_pushnumber(L, t);                                    \
+        lua_call(L, 1, 1);                                       \
+        val = val OP lua_tonumber(L, -1);                        \
+        lua_pop(L, 2);                                           \
+                                                                 \
+        lua_pushnumber(L, val);                                  \
+        lua_rawseti(L, -3, i);                                   \
+        t += step;                                               \
+    }                                                            \
+    return 2;                                                    \
+}                                                                \
+                                                                 \
 static int signal_##name##_number_closure(lua_State* L)          \
 {                                                                \
     double t = luaL_checknumber(L, 1);                           \
@@ -99,7 +129,7 @@ static int signal_##name##_number_closure(lua_State* L)          \
 int signal_##name(lua_State *L)                                  \
 {                                                                \
     lua_settop(L, 2);                                            \
-    if (lua_isnumber(L, 2)) /* swap 1st with 2nd element */      \
+    if (lua_isnumber(L, 2) || lua_isfunction(L, 2))              \
         lua_insert(L, 1);                                        \
                                                                  \
     if (!signal_userdata_is_signal(L, 2))                        \
@@ -108,11 +138,13 @@ int signal_##name(lua_State *L)                                  \
                                                                  \
     if (lua_isnumber(L, 1)) {                                    \
         lua_pushcclosure(L, &signal_##name##_number_closure, 2); \
+    } else if (lua_isfunction(L, 1)) {                           \
+        lua_pushcclosure(L, &signal_##name##_function_closure, 2); \
     } else if (signal_userdata_is_signal(L, 1)) {                \
         signal_replace_udata_with_closure(L, 1);                 \
         lua_pushcclosure(L, &signal_##name##_closure, 2);        \
     } else {                                                     \
-        return luaL_typerror(L, 1, "signal or number");          \
+        return luaL_typerror(L, 1, "signal, number or function"); \
     }                                                            \
     signal_new_from_closure(L);                                  \
     return 1;                                                    \

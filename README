@@ -58,6 +58,11 @@ Example:
     lhc> r:play()
     lhc> r:stop()
 
+    lhc> -- envelope!
+    lhc> g = sig{gen.sin,f=200} * function(t) math.exp(-x*x)
+    lhc> g:play()
+    lhc> g:stop()
+
     lhc> -- substractive synthesis is fun!
     lhc> flow = sig{gen.bn}:lp(440)
     lhc> flow:play()
@@ -111,8 +116,12 @@ Signals:
 
     signal' = signal * number   and   signal' = number * signal
     signal' = signal1 * signal2
+    signal' = signal * function(t)
     signal' = signal + number   and   signal' = number + signal
     signal' = signal1 + signal2
+    signal' = signal + function(t)
+
+    Envelopes can be done using signal * function(t)
 
     See example.
 
