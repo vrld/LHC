@@ -28,13 +28,14 @@
 #include "signal.h"
 #include <stdlib.h>
 #include <lauxlib.h>
+#include <math.h>
 
 static int signal_normalize_closure(lua_State* L)
 {
     int i;
     double t = luaL_checknumber(L, 1);
-    double max, lastmax, modulation;
-    double mult = lua_tonumber(L, lua_upvalueindex(2));
+    double max, maxidx, lastmax, modulation;
+    double top = lua_tonumber(L, lua_upvalueindex(2));
     double values[SAMPLE_BUFFER_SIZE];
 
     lua_pushvalue(L, lua_upvalueindex(1));
@@ -42,14 +43,20 @@ static int signal_normalize_closure(lua_State* L)
     lua_call(L, 1, 2);
 
     max = 1e-10;
+    maxidx = 1;
     for (i = 1; i <= SAMPLE_BUFFER_SIZE; ++i)
     {
         lua_rawgeti(L, -2, i);
         values[i-1] = lua_tonumber(L, -1);
-        if (max < values[i-1])
-            max = values[i-1];
+        if (max < fabs(values[i-1])) {
+            maxidx = (double)i;
+            max = fabs(values[i-1]);
+        }
         lua_pop(L, 1);
     }
+
+    if (maxidx < 32)
+        maxidx = 32.;
 
     lua_pushvalue(L, lua_upvalueindex(3));
     lua_rawgeti(L, -1, 1);
@@ -60,8 +67,11 @@ static int signal_normalize_closure(lua_State* L)
 
     for (i = 1; i <= SAMPLE_BUFFER_SIZE; ++i)
     {
-        modulation = lastmax + (max - lastmax) * (double)i / (double)SAMPLE_BUFFER_SIZE;
-        lua_pushnumber(L, values[i-1] / modulation * mult);
+        modulation = (max - lastmax);
+        if (i < maxidx)
+            modulation *= (double)i / maxidx;
+        modulation += lastmax;
+        lua_pushnumber(L, values[i-1] / modulation * top);
         lua_rawseti(L, -3, i);
     }
 
@@ -80,7 +90,7 @@ int signal_normalize(lua_State *L)
 
     signal_replace_udata_with_closure(L, 1);
     lua_createtable(L, 1, 0);
-    lua_pushnumber(L, 1);
+    lua_pushnumber(L, 0);
     lua_rawseti(L, -2, 1);
     lua_pushcclosure(L, &signal_normalize_closure, 3);
     signal_new_from_closure(L);
