@@ -78,6 +78,27 @@ static int signal_normalize_closure(lua_State* L)
     return 2;
 }
 
+int signal_compress_closure(lua_State* L)
+{
+    int i;
+    double t = luaL_checknumber(L, 1);
+    double val;
+
+    lua_pushvalue(L, lua_upvalueindex(1));
+    lua_pushnumber(L, t);
+    lua_call(L, 1, 2);
+
+    for (i = 1; i <= SAMPLE_BUFFER_SIZE; ++i)
+    {
+        lua_rawgeti(L, -2, i);
+        val = lua_tonumber(L, -1);
+        lua_pop(L, 1);
+        lua_pushnumber(L, tanh(val));
+        lua_rawseti(L, -3, i);
+    }
+    return 2;
+}
+
 int signal_normalize(lua_State *L)
 {
     if (!signal_userdata_is_signal(L, 1))
@@ -90,9 +111,19 @@ int signal_normalize(lua_State *L)
 
     signal_replace_udata_with_closure(L, 1);
     lua_createtable(L, 1, 0);
-    lua_pushnumber(L, 0);
+    lua_pushnumber(L, .5);
     lua_rawseti(L, -2, 1);
     lua_pushcclosure(L, &signal_normalize_closure, 3);
+    signal_new_from_closure(L);
+    return 1;
+}
+
+int signal_compress(lua_State* L)
+{
+    if (!signal_userdata_is_signal(L, 1))
+        return luaL_typerror(L, 1, "signal");
+    signal_replace_udata_with_closure(L, 1);
+    lua_pushcclosure(L, &signal_compress_closure, 1);
     signal_new_from_closure(L);
     return 1;
 }

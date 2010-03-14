@@ -155,6 +155,7 @@ void signal_new_from_closure(lua_State *L)
         SET_FUNCTION_FIELD(L, signal_filter_bandreject, "br");
 
         SET_FUNCTION_FIELD(L, signal_normalize, "normalize");
+        SET_FUNCTION_FIELD(L, signal_compress, "compress");
 
         /* set metatable as index table */
         lua_pushvalue(L, -1);

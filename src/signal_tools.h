@@ -30,5 +30,6 @@
 #include <lua.h>
 
 int signal_normalize(lua_State* L);
+int signal_compress(lua_State* L);
 
 #endif /* SIGNAL_TOOLS_H */
