@@ -95,6 +95,7 @@ if (ALL_FOUND)
         signal_operators.c
         signal_player.c
         signal_filters.c
+        signal_tools.c
         queue.c
         timer.c
     )
