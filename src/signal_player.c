@@ -163,5 +163,11 @@ int signal_stop(lua_State *L)
         if (s->thread)
             lhc_thread_join(s->thread, NULL); */
     }
+    /* remove signal thread from table */
+    lua_getglobal(L, "signals");
+    lua_getfield(L, -1, "threads");
+    lua_pushvalue(L, 1);
+    lua_pushnil(L);
+    lua_rawset(L, -3);
     return 0;
 }
