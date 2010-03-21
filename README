@@ -18,7 +18,7 @@ Linux:
     $ make
 
 OSX (not tested or even known):
-    Propably the same as on Linux, but there should
+    Probably the same as on Linux, but there should
     be a way to create a XCode project.
 
 Windows (not tested):
@@ -33,45 +33,71 @@ To use:
 
 Example:
     $ ./lhc 
-    lhc> -- play some signals
-    lhc> saw = sig{gen.saw, f=220}
-    lhc> saw:play()
-    lhc> saw:stop()
-    lhc> sin = sig{gen.sin, f=440}
-    lhc> sin:play()
-    lhc> signals.stop()
+    >> -- play some signals
+    >> saw = sig{gen.saw, f=220}
+    >> saw:play()
+    >> saw:stop()
+    >> sin = sig{gen.sin, f=440}
+    >> sin:play()
+    >> signals.stop()
     
-    lhc> -- mix samples 
-    lhc> sawsin = sin * .7 + saw * .3
-    lhc> sawsin:play()
-    lhc> sawsin:stop()
+    >> -- mix samples 
+    >> sawsin = sin * .7 + saw * .3
+    >> sawsin:play()
+    >> sawsin:stop()
     
-    lhc> -- modulate signals
-    lhc> mod = sig{gen.sin,f=100} * sig{gen.triangle,f=1}
-    lhc> mod:play()
-    lhc> mod:stop()
+    >> -- modulate signals
+    >> mod = sig{gen.sin,f=100} * sig{gen.triangle,f=1}
+    >> mod:play()
+    >> mod:stop()
 
-    lhc> -- the frequency can be a function, too:
-    lhc> length = 30
-    lhc> function rise(t) return 300 * (1 + t / length) + gen.sin(t) end
-    lhc> r = sig{gen.sin, f=rise}
-    lhc> r:play()
-    lhc> r:stop()
+    >> -- the frequency can be a function, too:
+    >> length = 30
+    >> function rise(t) return 300 * (1 + t / length) + gen.sin(t) end
+    >> r = sig{gen.sin, f=rise}
+    >> r:play()
+    >> r:stop()
 
-    lhc> -- envelope!
-    lhc> g = sig{gen.sin,f=200} * function(t) math.exp(-x*x)
-    lhc> g:play()
-    lhc> g:stop()
+    >> -- envelope!
+    >> g = sig{gen.sin,f=200} * function(t) math.exp(-x*x)
+    >> g:play()
+    >> g:stop()
 
-    lhc> -- substractive synthesis is fun!
-    lhc> flow = sig{gen.bn}:lp(440)
-    lhc> flow:play()
-    lhc> defaults.generator = gen.wn
-    lhc> t = sig{}:bp(440,445) + sig{}:bp(660,667) + sig{}:bp(878,884)
-    lhc> t:play() -- this is way too quiet
-    lhc> t:stop()
-    lhc> t2 = t:normalize(.9)
-    lhc> t2:play()
+    >> -- subtractive synthesis is fun!
+    >> flow = sig{gen.bn}:lp(440)
+    >> flow:play()
+    >> t = sig{gen.wn}:bp{{440,445}, {660,667}, {878,884}}
+    >> t:play() -- this is way too quiet
+    >> t:stop()
+    >> t2 = t:normalize(.9)
+    >> t2:play()
+
+    >> -- TIMER! actual working example
+    >> function fall(l)
+    ..     return function(t)
+    ..         if t > l then return 0 end
+    ..         return 1 - t / l
+    ..     end
+    .. end
+    >> function sp(s, l)
+    ..     local s=(s*fall(l)):compress()
+    ..     return function()
+    ..         s:play()
+    ..         timer.new(l * 1000, function() s:stop() end)
+    ..     end
+    .. end
+    >> function melody()
+    ..     local function n1(l) l = l or .3 return sp((sig{f=440}*.7+sig{f=430}*.3), l) end
+    ..     local function n2(l) l = l or .3 return sp((sig{f=660}*.7+sig{f=650}*.3), l) end
+    ..     local function n3(l) l = l or .3 return sp((sig{f=880}*.7+sig{f=870}*.3), l) end
+    ..     timer.new(  0, n1())
+    ..     timer.new(150, n3())
+    ..     timer.new(350, n2())
+    ..     timer.new(500, n1())
+    ..     timer.new(750, n2())
+    ..     timer.new(850, n3())
+    .. end
+    >> melody()
 
 
 === Lua interface ===
@@ -79,7 +105,7 @@ LHC uses Lua to leech on it's awesomeness. LHC defines functions and
 tables, that can be used by Lua.
 
 
-defauts: This table stores some default values.
+defaults: This table stores some default values.
     defaults.freq = 440           -- default frequency for signals
     defaults.generator = gen.sin  -- default generator
 
@@ -186,10 +212,15 @@ Filter:
     Bandpass:
         signal.bp aka. signal.bandpass, i.e.:
         t = s:bp(430, 450) -- pass frequencies in [430,450]
+        
+        you can also specify more than one band, with a table argument:
+        t = s:bp{ {430,450}, {650,670}, {870,890} }
 
     Bandreject:
         signal.br aka. signal.bandreject, i.e.:
         t = s:br(430, 450) -- pass frequencies < 430 and > 450
+
+        as with bp, you can specify more than one band.
 
 
     Filter Examples:
@@ -199,21 +230,49 @@ Filter:
         pointless = (sig{gen.sin,f=440}*.7 + sig{gen.sin,f=660}*.3):hp(500)
         pointless:play()
 
-        substr = sig{gen.wn}:bp(435,445) * 9
+        substr = sig{gen.wn}:bp(435,445):normalize()
         substr:play()
+
+Timer:
+    
+    Timers invoke functions after a certain amount of time. LHC timers have
+    a resolution of 1ms. The create a timer:
+
+    timer.new(delay, function)  -- delay is in ms
+
+    Important:
+      Timers assure the callback will not be executed before the timer expires.
+      It can happen that the timed is called after (delay + x) ms.
+
+    Examples:
+      timer.new(1000, function() print("foo") end)
+      
+      function m() print("Another second passed") timer.new(1000, m) end
+      m()
+
 
 More stuff:
 
-    Normalisation (make quiet signals louder and loud signals more quiet):
+    Normalisation - make quiet signals louder and loud signals more quiet:
        
-       signals.normalize([peak]) -- will scale signal so that the maximum
-                                 -- value will be around peak
-                                 -- peak is optional.
+       signals.normalize(signal, [peak]) -- will scale signal so that the maximum
+                                         -- value will be around peak
+                                         -- peak is optional.
 
        Examples:
 
          sig{gen.wn}:bp(440,441):normalize(.7):play()
          (sig{}+sig{f=660}+sig{f=880}):normalize(.6):play()
+
+
+    Compression - transform signal values to be in the range [-1:1]. 
+    Currently this is done using the tanh function:
+        
+        signals.compress(signal)
+
+        Example:
+          
+          (sig{}+sig{f=430}):compress():play()
 
 
 === License ===
