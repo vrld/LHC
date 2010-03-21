@@ -39,16 +39,18 @@ static const double PI = 3.14159265358979323844;
         return 1; \
     }
 
+#define RANDOM(a,b) (((double)rand() / (double)RAND_MAX) * ((b)-(a)) + (a))
+
 GENERATOR(sin,        sin(t * 2 * PI));
 GENERATOR(triangle,   t<=.5 ? 4.*t-1. : 3.-4.*t);
 GENERATOR(saw,        2. * t - 1.);
 GENERATOR(rect,       t<=.5 ? 1. : -1.);
-GENERATOR(whiteNoise, ((void)t, (rand() % (1 << 15)) / (double)(1<<14) - 1.));
+GENERATOR(whiteNoise, ((void)t, RANDOM(-1., 1.)));
 
 static int generator_brownNoise_closure(lua_State *L)
 {
     double last = lua_tonumber(L, lua_upvalueindex(1));
-    last = (rand() % (1 << 15)) / (double)(1 << 14) - 1. + last;
+    last += RANDOM(-1.,1.);
     if (last < -1.) last = -1.;
     if (last >  1.) last =  1.;
     lua_pushnumber(L, last);
