@@ -29,6 +29,7 @@
 #include <lauxlib.h>
 #include <lualib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <portaudio.h>
 
 #include "generators.h"
@@ -44,10 +45,10 @@ lhc_mutex lock_lua_state;
 Queue* command_queue;
 int commandline_active = 0;
 
-void exec_file(lua_State* L, const char* file);
 void* fetch_command(void*);
+void schedule_timers(lua_State* L);
 
-int main(int argc, char** argv)
+int main()
 {
     const char* command;
     int error;
@@ -55,52 +56,40 @@ int main(int argc, char** argv)
     lhc_mutex_init(&lock_lua_state);
     command_queue = queue_init();
 
-    lua_State *L = lua_open();
+    lua_State *L = luaL_newstate();
     luaL_openlibs(L);
     lua_cpcall(L, luaopen_generators, NULL);
     lua_cpcall(L, luaopen_signal, NULL);
-
-    lua_createtable(L, 0, 2);
-    lua_pushnumber(L, 440);
-    lua_setfield(L, -2, "freq");
-    lua_getglobal(L, "gen");
-    lua_getfield(L, -1, "sin");
-    lua_setfield(L, -3, "generator");
-    lua_pop(L, 1);
-    lua_setglobal(L, "defaults");
-
-    lua_newtable(L);
-        lua_newtable(L);
-        lua_setfield(L, -2, "threads");
-
-        const char* stop_all_signals = "for _s_, _ in pairs(signals.threads) do "
-                                            "_s_:stop() "
-                                        "end";
-        luaL_loadbuffer(L, stop_all_signals, strlen(stop_all_signals), "signals.stop()");
-        lua_setfield(L, -2, "stop");
-
-        const char* clear_all_signals = "for _s_, _ in pairs(signals.threads) do "
-                                            "_s_:stop() "
-                                            "signals.threads[_s_] = nil "
-                                        "end";
-        luaL_loadbuffer(L, clear_all_signals, strlen(clear_all_signals), "signals.clear()");
-        lua_setfield(L, -2, "clear");
-    lua_setglobal(L, "signals");
-
-    /* timer functions */
-    lua_newtable(L); lua_setglobal(L, "timers");
     lua_pushcfunction(L, &l_time);
     lua_setglobal(L, "time");
-    const char* new_timer = "function timer(eta, func) "
-                                "timers[#timers+1] = {eta + time(), func} "
-                            "end";
-    luaL_loadbuffer(L, new_timer, strlen(new_timer), "timer");
+
+    const char* lhc_std =
+    "defaults = { "
+    "     generator = gen.sin, "
+    "     freq = 440, "
+    "} "
+    "signals = { "
+    "    threads = {}, "
+    "    stop = function() "
+    "        for _s_, _ in pairs(signals.threads) do "
+    "            _s_:stop() "
+    "        end "
+    "    end, "
+    "    clear = function() "
+    "        for _s_, _ in pairs(signals.threads) do "
+    "            _s_:stop() "
+    "            signals.threads[_s_] = nil "
+    "        end "
+    "    end "
+    "} "
+    "timer = { "
+    "    new = function(eta, func) "
+    "        timer[#timer+1] = {eta + time(), func} "
+    "    end "
+    "}";
+    luaL_loadbuffer(L, lhc_std, strlen(lhc_std), "lhc std");
     lua_pcall(L, 0,0,0);
 
-    /* load file  */
-    PA_ASSERT_CMD(Pa_Initialize());
-    if (argc > 1)
-        exec_file(L, argv[1]);
 
     /* run commandline */
     commandline_active = 1;
@@ -112,6 +101,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    PA_ASSERT_CMD(Pa_Initialize());
     while (commandline_active) 
     {
         if (!queue_empty(command_queue))
@@ -119,10 +109,10 @@ int main(int argc, char** argv)
             command = queue_front_nocopy_dont_use_this_if_not_sure(command_queue);
             lhc_mutex_lock(&lock_lua_state);
             {
-                error = luaL_loadbuffer(L, command, strlen(command), "line") || lua_pcall(L, 0,0,0);
+                error = luaL_loadbuffer(L, command, strlen(command), "input") || lua_pcall(L, 0,0,0);
                 if (error)
                 {
-                    fprintf(stderr, "\rerror: %s\nlhc> ", lua_tostring(L, -1));
+                    fprintf(stderr, "\r/o\\ OH NOES! /o\\ %s\n", lua_tostring(L, -1));
                     lua_pop(L, 1);
                 }
             }
@@ -130,56 +120,28 @@ int main(int argc, char** argv)
             queue_pop(command_queue);
         }
 
-        /* schedule timers */
-        lhc_mutex_lock(&lock_lua_state);
-        {
-            lua_getglobal(L, "timers");
-            lua_pushnil(L);
-            while (lua_next(L, -2) != 0) {
-                lua_rawgeti(L, -1, 1);
-                if ((long long)lua_tonumber(L, -1) <= time_ms()) {
-                    lua_rawgeti(L, -2, 2);
-                    lua_call(L, 0, 0);
-                    /* remove timed function */
-                    lua_pushvalue(L, -3);
-                    lua_pushnil(L);
-                    lua_rawset(L, -6);
-                }
-                lua_pop(L, 2);
-            }
-            lua_pop(L, 1);
-        }
-        lhc_mutex_unlock(&lock_lua_state);
-        lhc_thread_yield();
+        schedule_timers(L);
     }
 
     lua_close(L);
-
     PA_ASSERT_CMD(Pa_Terminate());
+
     return 0;
 }
 
-void exec_file(lua_State* L, const char* file)
+/* from the lua interpreter */
+static int incomplete(lua_State* L, int status)
 {
-    FILE* f = fopen(file, "r");
-    int error = 0;
-    if (f != NULL)
-    {
-        fclose(f);
-        lhc_mutex_lock(&lock_lua_state);
-        {
-            error = luaL_dofile(L, file);
+    if (status == LUA_ERRSYNTAX) {
+        size_t lmsg;
+        const char *msg = lua_tolstring(L, -1, &lmsg);
+        const char *tp = msg + lmsg - (sizeof("'<eof>'") - 1);
+        if (strstr(msg, "'<eof>'") == tp) {
+            lua_pop(L, 1);
+            return 1;
         }
-        lhc_mutex_unlock(&lock_lua_state);
-        if (error)
-            fprintf(stderr, "error: %s\n", lua_tostring(L, -1));
-        else
-            printf("loaded file '%s'!\n", file);
     }
-    else
-    {
-        fprintf(stderr, "cannot open '%s' for reading!\n", file);
-    }
+    return 0;  /* else... */
 }
 
 void* fetch_command(void* _)
@@ -187,21 +149,73 @@ void* fetch_command(void* _)
     (void)_;
     char in_buffer[LHC_CMDLINE_INPUT_BUFFER_SIZE];
     char *input = in_buffer;
+    const char* prompt1 = ">> ";
+    const char* prompt2 = ".. ";
+    const char* prompt = prompt1;
 #ifdef WITH_GNU_READLINE
-    rl_bind_key ('\t', rl_insert); /* TODO: tab completion on globals */
+    rl_bind_key ('\t', rl_insert); /* TODO: tab completion on globals? */
 #endif
 
-    /* TODO: multiline input */
-    while (read_line(input, "lhc> "))
+    /* create new state for testing multiline input */
+    lua_State* L = luaL_newstate();
+    int status;
+
+    lua_pushliteral(L, "");
+    while (read_line(input, prompt))
     {
         if (strstr(input, "exit") == input)
             break;
-        if (input[0] != 0 && input[0] != '\n') 
-        {
-            save_line(input);
-            queue_push(command_queue, input);
+        if (input[0] == '\0')
+            continue;
+        save_line(input);
+
+        /* multiline input -- take a loo at the original lua interpreter */
+        lua_pushstring(L, input);
+        lua_pushliteral(L, "\n");
+        lua_insert(L, -2);
+        lua_concat(L, 3);
+        status = luaL_loadbuffer(L, lua_tostring(L, 1), lua_strlen(L, 1), "=stdin");
+        prompt = prompt2;
+        if (!incomplete(L, status)) {
+            queue_push(command_queue, lua_tostring(L, 1));
+            lua_settop(L, 0);
+            lua_pushliteral(L, "");
+            prompt = prompt1;
         }
     }
     commandline_active = 0;
     return NULL;
+}
+
+void schedule_timers(lua_State* L)
+{
+    int status;
+    lhc_mutex_lock(&lock_lua_state);
+    lua_getglobal(L, "timer");
+    lua_pushnil(L);
+    while (lua_next(L, -2) != 0) 
+    {
+        /* avoid timer.new */
+        if (lua_istable(L, -1))
+        {
+            lua_rawgeti(L, -1, 1);
+            if ((long long)lua_tonumber(L, -1) <= time_ms()) 
+            {
+                lua_rawgeti(L, -2, 2);
+                status = lua_pcall(L, 0, 0, 0);
+                if (status != 0) {
+                    fprintf(stderr, "\rI accidentally the whole timer: %s\n", lua_tostring(L, -1));
+                    lua_pop(L, 1);
+                }
+                /* remove timed function */
+                lua_pushvalue(L, -3);
+                lua_pushnil(L);
+                lua_rawset(L, -6);
+            }
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+    lhc_mutex_unlock(&lock_lua_state);
 }
