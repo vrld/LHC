@@ -119,7 +119,6 @@ static void* signal_fill_buffer_thread(void* arg)
 
             fill_buffer(L, s, buffer);
         }
-        lhc_thread_yield();
     }
 
     PA_ASSERT_CMD(Pa_StopStream(stream));
