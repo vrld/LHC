@@ -140,6 +140,13 @@ int filter_bandpass(double* filter, int size, double f_low, double f_high, doubl
     if (size % 2 != 1)
         return -1;
 
+    if (f_high < f_low)
+    {
+        double t = f_high;
+        f_high = f_low;
+        f_low = t;
+    }
+
     int i;
     double* temp = malloc(size * sizeof(double));
     if (!temp) 
