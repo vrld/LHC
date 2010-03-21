@@ -110,38 +110,9 @@ static int signal_filter_info_gc(lua_State *L)
     return 0;
 }
 
-enum FilterType {
-    FILTER_LOWPASS = 0,
-    FILTER_HIGHPASS,
-    FILTER_BANDPASS,
-    FILTER_BANDREJECT
-};
-
-static int signal_create_filter(lua_State *L, enum FilterType filter_type)
+static filter_info* create_filter_userdata(lua_State* L)
 {
     filter_info* info;
-
-    double freq1, freq2, bw = 4. / (double)(SAMPLE_BUFFER_SIZE);
-    int kernel_size, i;
-
-    if (!signal_userdata_is_signal(L, 1))
-        return luaL_typerror(L, 1, "signal");
-
-    if (filter_type <= FILTER_HIGHPASS) {
-        lua_settop(L, 3);
-        if (lua_isnumber(L, 3))
-            bw = lua_tonumber(L, 3);
-    } else {
-        lua_settop(L, 4);
-        freq2 = luaL_checknumber(L, 3);
-        if (lua_isnumber(L, 4))
-            bw = lua_tonumber(L, 4);
-    }
-    freq1 = luaL_checknumber(L, 2);
-    signal_replace_udata_with_closure(L, 1);
-    lua_pushvalue(L, 1);
-
-    /* prepare filter userdata */
     info             = (filter_info*)lua_newuserdata(L,
                             sizeof(filter_info)); 
     info->filter     = (fftw_complex*)fftw_malloc(
@@ -159,30 +130,12 @@ static int signal_create_filter(lua_State *L, enum FilterType filter_type)
     }
     lua_setmetatable(L, -2);
 
-    /* generate filter kernel. 
-     * put it into info->signal so we can use the plans created above
-     */
-    kernel_size = get_filter_width(bw);
+    return info;
+}
 
-    if (kernel_size > FFT_SIZE - 1)
-        kernel_size = FFT_SIZE - 1;
-
-    switch (filter_type) {
-        case FILTER_LOWPASS:
-            filter_lowpass(info->signal, kernel_size, freq1, SAMPLERATE);
-            break;
-        case FILTER_HIGHPASS:
-            filter_highpass(info->signal, kernel_size, freq1, SAMPLERATE);
-            break;
-        case FILTER_BANDPASS:
-            filter_bandpass(info->signal, kernel_size, freq1, freq2, SAMPLERATE);
-            break;
-        case FILTER_BANDREJECT:
-            filter_bandreject(info->signal, kernel_size, freq1, freq2, SAMPLERATE);
-            break;
-        default:
-            luaL_error(L, "Panic: Your pants are on fire!");
-    }
+static void filter_to_freq_domain(filter_info* info, int kernel_size)
+{
+    int i;
 
     for (i = kernel_size; i < FFT_SIZE; ++i)
         info->signal[i] = 0.;
@@ -198,8 +151,37 @@ static int signal_create_filter(lua_State *L, enum FilterType filter_type)
         info->filter[i][1] = info->signal_fft[i][1];
         info->filtered_old[i % SAMPLE_BUFFER_SIZE] = 0.;
     }
+}
 
-    /* stack: signal, f, bw, signal, filter info */
+static int signal_filter_onefreq(lua_State* L, int(*filter_func)(double*,int,double,double))
+{
+    filter_info *info;
+    double freq, bw = 4. / (double)(SAMPLE_BUFFER_SIZE);
+    int kernel_size;
+
+    if (!filter_func)
+        return luaL_error(L, "panic: pants on fire");
+
+    if (!signal_userdata_is_signal(L, 1))
+        return luaL_typerror(L, 1, "signal");
+    signal_replace_udata_with_closure(L, 1);
+    lua_pushvalue(L, 1);
+
+    freq = luaL_checknumber(L, 2);
+
+    info = create_filter_userdata(L);
+    /* generate filter kernel. 
+     * put it into info->signal so we can use the plans created 
+     * in create_filter
+     */
+    kernel_size = get_filter_width(bw);
+    if (kernel_size > FFT_SIZE - 1)
+        kernel_size = FFT_SIZE - 1;
+
+    filter_func(info->signal, kernel_size, freq, SAMPLERATE);
+    filter_to_freq_domain(info, kernel_size);
+
+    /* stack: signal, f, signal, filter info */
     lua_pushcclosure(L, &signal_filter_closure, 2);
     signal_new_from_closure(L);
     lua_replace(L, 1); /* move new signal to bottom of stack */
@@ -207,22 +189,99 @@ static int signal_create_filter(lua_State *L, enum FilterType filter_type)
     return 1;
 }
 
-int signal_filter_lowpass(lua_State *L)
+static int signal_filter_multifreq(lua_State* L, int(*filter_func)(double*,int,double,double,double))
 {
-    return signal_create_filter(L, FILTER_LOWPASS);
+    filter_info *info;
+    double freq1, freq2, bw = 4. / (double)(SAMPLE_BUFFER_SIZE);
+    double filter_temp[FFT_SIZE];
+    int kernel_size, i;
+
+    if (!signal_userdata_is_signal(L, 1))
+        return luaL_typerror(L, 1, "signal");
+    signal_replace_udata_with_closure(L, 1);
+    lua_pushvalue(L, 1);
+
+    /* make non-table argument a table argument */
+    if (!lua_istable(L, 2)) 
+    {
+        lua_createtable(L, 1, 0);
+
+        lua_createtable(L, 2, 0);
+        lua_pushvalue(L, 2);
+        lua_rawseti(L, -2, 1);
+        lua_pushvalue(L, 3);
+        lua_rawseti(L, -2, 2);
+        
+        lua_rawseti(L, -2, 1);
+        lua_replace(L, 2);
+    }
+    /* check arguments for goodness */
+    if (lua_objlen(L, 2) < 1)
+        return luaL_error(L, "Very funny, dude...");
+
+    lua_pushnil(L);
+    while (lua_next(L, 2) != 0)
+    {
+        if (lua_objlen(L, -1) < 2)
+            return luaL_error(L, "Filter needs frequency pairs");
+        lua_rawgeti(L, -1, 1);
+        lua_rawgeti(L, -2, 2);
+        if (!lua_isnumber(L, -2) || !lua_isnumber(L, -1))
+            return luaL_error(L, "Frequencies must be numbers");
+
+        lua_pop(L, 3);
+    }
+
+    /* finally, the create filter part */
+    info = create_filter_userdata(L);
+    kernel_size = get_filter_width(bw);
+    if (kernel_size > FFT_SIZE - 1)
+        kernel_size = FFT_SIZE - 1;
+
+    for (i = 0; i < FFT_SIZE; ++i)
+        info->signal[i] = 0;
+
+    /* make multiple bandpass (multipass anyone?) */
+    lua_pushnil(L);
+    while (lua_next(L, 2) != 0) 
+    {
+        lua_rawgeti(L, -1, 1);
+        lua_rawgeti(L, -2, 2);
+        freq1 = lua_tonumber(L, -2);
+        freq2 = lua_tonumber(L, -1);
+
+        filter_func(filter_temp, kernel_size, freq1, freq2, SAMPLERATE);
+        for (i = 0; i < FFT_SIZE; ++i)
+            info->signal[i] += filter_temp[i];
+
+        lua_pop(L, 3);
+    }
+    filter_to_freq_domain(info, kernel_size);
+
+    lua_pushcclosure(L, &signal_filter_closure, 2);
+    signal_new_from_closure(L);
+    lua_replace(L, 1);
+    lua_settop(L, 1);
+    return 1;
 }
 
-int signal_filter_highpass(lua_State *L)
+int signal_filter_lowpass(lua_State* L)
 {
-    return signal_create_filter(L, FILTER_HIGHPASS);
+    return signal_filter_onefreq(L, &filter_lowpass);
 }
 
-int signal_filter_bandpass(lua_State *L)
+int signal_filter_highpass(lua_State* L)
 {
-    return signal_create_filter(L, FILTER_BANDPASS);
+    return signal_filter_onefreq(L, &filter_highpass);
+}
+    
+int signal_filter_bandpass(lua_State* L)
+{
+    return signal_filter_multifreq(L, &filter_bandpass);
 }
 
-int signal_filter_bandreject(lua_State *L)
+int signal_filter_bandreject(lua_State* L)
 {
-    return signal_create_filter(L, FILTER_BANDREJECT);
+    return signal_filter_multifreq(L, &filter_bandreject);
 }
+
