@@ -27,14 +27,14 @@
 #include "generators.h"
 #include "config.h"
 #include <lauxlib.h>
-#include <math.h>
 #include <stdlib.h>
+#include <math.h>
 
 static const double PI = 3.14159265358979323844;
 
 #define GENERATOR(name, function) \
     static int generator_ ##name(lua_State* L) { \
-        double t = fmod(luaL_checknumber(L, 1), 1); \
+        double t = luaL_checknumber(L, 1); \
         lua_pushnumber(L, (function)); \
         return 1; \
     }

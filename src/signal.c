@@ -31,6 +31,7 @@
 #include "signal_tools.h"
 
 #include <lauxlib.h>
+#include <math.h>
 
 /*
  * returns true if userdata at idx is a signal
@@ -87,7 +88,8 @@ static int signal_closure(lua_State *L)
     for (i = 1; i <= SAMPLE_BUFFER_SIZE; ++i, t += timestep) 
     {
         lua_pushvalue(L, lua_upvalueindex(2));
-        if (lua_isfunction(L, -1)) {
+        if (lua_isfunction(L, -1)) 
+        {
             lua_pushnumber(L, t);
             lua_call(L, 1, 1);
         }
@@ -95,7 +97,13 @@ static int signal_closure(lua_State *L)
         lua_pop(L, 1);
 
         lua_pushvalue(L, lua_upvalueindex(1));
-        lua_pushnumber(L, t * freq);
+        /* t should be in [0:1] for the generator, as the slope of
+         * t * freq gets bigger with growing t:
+         * If the frequency is a function(t) return 440 + 220 * (t%1) end
+         * (t * freq) will result in t * 440 + 220 * t * (t%1) which is
+         * not linear anymore! (plot this if you want to)
+         */
+        lua_pushnumber(L, fmod(t,1) * freq);
         lua_call(L, 1, 1);
         lua_rawseti(L, -2, i);
     }
