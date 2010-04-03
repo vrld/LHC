@@ -158,8 +158,6 @@ int get_command(lua_State* L)
     {
         if (strstr(input, "exit") == input)
             return 0;
-        if (input[0] == '\0')
-            return 0;
 
         save_line(input);
 
