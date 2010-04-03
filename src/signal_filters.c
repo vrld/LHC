@@ -265,23 +265,38 @@ static int signal_filter_multifreq(lua_State* L, int(*filter_func)(double*,int,d
     return 1;
 }
 
-int signal_filter_lowpass(lua_State* L)
+static int signal_filter_lowpass(lua_State* L)
 {
     return signal_filter_onefreq(L, &filter_lowpass);
 }
 
-int signal_filter_highpass(lua_State* L)
+static int signal_filter_highpass(lua_State* L)
 {
     return signal_filter_onefreq(L, &filter_highpass);
 }
     
-int signal_filter_bandpass(lua_State* L)
+static int signal_filter_bandpass(lua_State* L)
 {
     return signal_filter_multifreq(L, &filter_bandpass);
 }
 
-int signal_filter_bandreject(lua_State* L)
+static int signal_filter_bandreject(lua_State* L)
 {
     return signal_filter_multifreq(L, &filter_bandreject);
 }
 
+int luaopen_signal_filter(lua_State* L)
+{
+    luaL_Reg filter[] = {
+        {"lowpass",    signal_filter_lowpass},
+        {"lp",         signal_filter_lowpass},
+        {"highpass",   signal_filter_highpass},
+        {"hp",         signal_filter_highpass},
+        {"bandpass",   signal_filter_bandpass},
+        {"bp",         signal_filter_bandpass},
+        {"bandreject", signal_filter_bandreject},
+        {"br",         signal_filter_bandreject},
+        {NULL, NULL}};
+    signal_register(L, filter);
+    return 0;
+}

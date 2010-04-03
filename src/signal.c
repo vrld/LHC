@@ -27,8 +27,6 @@
 #include "signal.h"
 #include "signal_operators.h"
 #include "signal_player.h"
-#include "signal_filters.h"
-#include "signal_tools.h"
 
 #include <lauxlib.h>
 #include <math.h>
@@ -125,7 +123,6 @@ static int signal_gc(lua_State *L)
     return 0;
 }
 
-#define SET_FUNCTION_FIELD(L, func, name) lua_pushcfunction(L, func); lua_setfield(L, -2, name)
 /* 
  * expects a C-Closure on top of the stack.
  * leaves the associated userdata on the stack.
@@ -144,34 +141,21 @@ void signal_new_from_closure(lua_State *L)
     lua_settable(L, LUA_REGISTRYINDEX); /* registry[udata] = closure */
 
     /* set metatable */
-    if (luaL_newmetatable(L, "lhc.signal")) 
-    {
-        SET_FUNCTION_FIELD(L, signal_gc, "__gc");
-        SET_FUNCTION_FIELD(L, signal_add, "__add");
-        SET_FUNCTION_FIELD(L, signal_mul, "__mul");
-
-        SET_FUNCTION_FIELD(L, signal_play, "play");
-        SET_FUNCTION_FIELD(L, signal_stop, "stop");
-
-        SET_FUNCTION_FIELD(L, signal_filter_lowpass, "lowpass");
-        SET_FUNCTION_FIELD(L, signal_filter_lowpass, "lp");
-        SET_FUNCTION_FIELD(L, signal_filter_highpass, "highpass");
-        SET_FUNCTION_FIELD(L, signal_filter_highpass, "hp");
-        SET_FUNCTION_FIELD(L, signal_filter_bandpass, "bandpass");
-        SET_FUNCTION_FIELD(L, signal_filter_bandpass, "bp");
-        SET_FUNCTION_FIELD(L, signal_filter_bandreject, "bandreject");
-        SET_FUNCTION_FIELD(L, signal_filter_bandreject, "br");
-
-        SET_FUNCTION_FIELD(L, signal_normalize, "normalize");
-        SET_FUNCTION_FIELD(L, signal_compress, "compress");
-
-        /* set metatable as index table */
-        lua_pushvalue(L, -1);
-        lua_setfield(L, -2, "__index");
-    }
+    luaL_getmetatable(L, "lhc.signal");
     lua_setmetatable(L, -2);
 
     /* userdata is left on the stack */
+}
+
+void signal_register(lua_State* L, luaL_Reg* lib)
+{
+    luaL_newmetatable(L, "lhc.signal");
+    while (lib->name && lib->func)
+    {
+        lua_pushcfunction(L, lib->func); 
+        lua_setfield(L, -2, lib->name);
+        lib++;
+    }
 }
 
 /*
@@ -221,5 +205,18 @@ int luaopen_signal(lua_State *L)
 {
     lua_register(L, "sig", l_signal);
     lua_register(L, "signal", l_signal);
+
+    luaL_Reg basics[] = {
+        {"__gc",  signal_gc},
+        {"__add", signal_add},
+        {"__mul", signal_mul},
+        {"play",  signal_play},
+        {"stop",  signal_stop},
+        {NULL, NULL}};
+    signal_register(L, basics);
+    luaL_getmetatable(L, "lhc.signal");
+    /* set metatable as index table for oo access*/
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "__index");
     return 0;
 }

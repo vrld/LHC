@@ -28,6 +28,7 @@
 #define SIGNAL_H
 
 #include <lua.h>
+#include <lauxlib.h>
 #include "config.h"
 #include "thread.h"
 
@@ -48,6 +49,7 @@ int luaopen_signal(lua_State *L);
 int signal_userdata_is_signal(lua_State* L, int idx);
 Signal* signal_checkudata(lua_State* L, int idx);
 void signal_new_from_closure(lua_State *L);
+void signal_register(lua_State* L, luaL_Reg* lib);
 
 /*
  * replaces userdata at given index with associated

@@ -34,6 +34,8 @@
 
 #include "generators.h"
 #include "signal.h"
+#include "signal_filters.h"
+#include "signal_tools.h"
 #include "thread.h"
 #include "commandline.h"
 #include "pa_assert.h"
@@ -57,6 +59,8 @@ int main()
     luaL_openlibs(L);
     lua_cpcall(L, luaopen_generators, NULL);
     lua_cpcall(L, luaopen_signal, NULL);
+    lua_cpcall(L, luaopen_signal_filter, NULL);
+    lua_cpcall(L, luaopen_signal_tools, NULL);
     lua_pushcfunction(L, &l_time);
     lua_setglobal(L, "time");
 

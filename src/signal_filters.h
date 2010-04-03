@@ -27,9 +27,6 @@
 #ifndef SIGNAL_FILTERS_H
 #define SIGNAL_FILTERS_H
 
-int signal_filter_lowpass(lua_State *L);
-int signal_filter_highpass(lua_State *L);
-int signal_filter_bandpass(lua_State *L);
-int signal_filter_bandreject(lua_State *L);
+int luaopen_signal_filter(lua_State* L);
 
 #endif /* SIGNAL_FILTERS_H */

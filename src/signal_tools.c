@@ -78,7 +78,7 @@ static int signal_normalize_closure(lua_State* L)
     return 2;
 }
 
-int signal_compress_closure(lua_State* L)
+static int signal_compress_closure(lua_State* L)
 {
     int i;
     double t = luaL_checknumber(L, 1);
@@ -99,7 +99,7 @@ int signal_compress_closure(lua_State* L)
     return 2;
 }
 
-int signal_normalize(lua_State *L)
+static int signal_normalize(lua_State *L)
 {
     if (!signal_userdata_is_signal(L, 1))
         return luaL_typerror(L, 1, "signal");
@@ -118,7 +118,7 @@ int signal_normalize(lua_State *L)
     return 1;
 }
 
-int signal_compress(lua_State* L)
+static int signal_compress(lua_State* L)
 {
     if (!signal_userdata_is_signal(L, 1))
         return luaL_typerror(L, 1, "signal");
@@ -126,4 +126,14 @@ int signal_compress(lua_State* L)
     lua_pushcclosure(L, &signal_compress_closure, 1);
     signal_new_from_closure(L);
     return 1;
+}
+
+int luaopen_signal_tools(lua_State *L)
+{
+    luaL_Reg tools[] = {
+        {"normalize", signal_normalize},
+        {"compress",  signal_compress},
+        {NULL, NULL}};
+    signal_register(L, tools);
+    return 0;
 }
