@@ -284,6 +284,7 @@ int l_sounddata_new(lua_State* L)
 
 int luaopen_sounddata(lua_State* L)
 {
-    lua_register(L, "sounddata", l_sounddata_new);
+    lua_register(L, "SoundData", l_sounddata_new);
+    lua_register(L, "SD", l_sounddata_new);
     return 0;
 }
