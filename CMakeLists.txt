@@ -89,15 +89,6 @@ if (ALL_FOUND)
     include_directories(${CMAKE_CURRENT_BINARY_DIR})
     add_subdir(SRCS src
         lhc.c
-        generators.c
-        filter_helper.c
-        signal.c
-        signal_operators.c
-        signal_player.c
-        signal_filters.c
-        signal_tools.c
-        queue.c
-        timer.c
     )
     add_executable(lhc ${SRCS})
     target_link_libraries(lhc ${LIBS})

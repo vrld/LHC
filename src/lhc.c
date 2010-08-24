@@ -32,91 +32,29 @@
 #include <stdlib.h>
 #include <portaudio.h>
 
-#include "generators.h"
-#include "signal.h"
-#include "signal_filters.h"
-#include "signal_tools.h"
-#include "thread.h"
-#include "commandline.h"
 #include "pa_assert.h"
-#include "timer.h"
-
-lhc_mutex lock_lua_state;
+#include "commandline.h"
 
 int get_command(lua_State* L);
-void* schedule_timer_thread(void* udata);
 
 int main()
 {
     int error;
-    lhc_thread timer_thread;
 
-    lhc_mutex_init(&lock_lua_state);
-
-    lua_State *L = luaL_newstate(); /* worker (signals, timer, ...) */
-    lua_State *L_input = luaL_newstate(); /* input parser */
+    lua_State *L = luaL_newstate();
 
     luaL_openlibs(L);
-    lua_cpcall(L, luaopen_generators, NULL);
-    lua_cpcall(L, luaopen_signal, NULL);
-    lua_cpcall(L, luaopen_signal_filter, NULL);
-    lua_cpcall(L, luaopen_signal_tools, NULL);
-    lua_pushcfunction(L, &l_time);
-    lua_setglobal(L, "time");
-
-    const char* lhc_std =
-    "defaults = { "
-    "     generator = gen.sin, "
-    "     freq = 440, "
-    "} "
-    "signals = { "
-    "    threads = {}, "
-    "    stop = function() "
-    "        for _s_, _ in pairs(signals.threads) do "
-    "            _s_:stop() "
-    "        end "
-    "    end, "
-    "    clear = function() "
-    "        for _s_, _ in pairs(signals.threads) do "
-    "            _s_:stop() "
-    "            signals.threads[_s_] = nil "
-    "        end "
-    "    end "
-    "} "
-    "timer = {} "
-    "setmetatable(timer, {__index = { "
-    "    new = function(eta, func) "
-    "        timer[#timer+1] = {eta + time(), func} "
-    "        return timer[#timer] "
-    "    end "
-    "}})";
-    luaL_loadbuffer(L, lhc_std, strlen(lhc_std), "lhc std");
-    lua_pcall(L, 0,0,0);
-
 
     PA_ASSERT_CMD(Pa_Initialize());
     /* run commandline */
-    while (get_command(L_input)) 
+    while (get_command(L)) 
     {
-        lhc_mutex_lock(&lock_lua_state);
-   
-        error = luaL_loadbuffer(L, lua_tostring(L_input, 1), lua_strlen(L_input, 1), "input");
+        error = luaL_loadbuffer(L, lua_tostring(L, 1), lua_strlen(L, 1), "input");
         if (error)
-            fprintf(stderr, "/o\\ OH NOES! /o\\ %s\n", lua_tostring(L, -1));
+            fprintf(stderr, "cannot load input: %s\n", lua_tostring(L, -1));
         error = lua_pcall(L, 0,0,0);
         if (error)
-            fprintf(stderr, "/o\\ OH NOES! /o\\ %s\n", lua_tostring(L, -1));
-
-        /* start timer thread if necessary */
-        lua_getglobal(L, "timer");
-        if (lua_objlen(L, -1) > 0) {
-            error = lhc_thread_create(&timer_thread, schedule_timer_thread, L);
-            if (error)
-                fprintf(stderr, "There is no time! (cannot start timer scheduler)\n");
-        }
-        lua_pop(L, 1);
-    
-        lhc_mutex_unlock(&lock_lua_state);
+            fprintf(stderr, "cannot run input: %s\n", lua_tostring(L, -1));
     }
 
     lua_close(L);
@@ -161,7 +99,7 @@ int get_command(lua_State* L)
 
         save_line(input);
 
-        /* multiline input -- take a loo at the original lua interpreter */
+        /* multiline input -- take a look at the original lua interpreter */
         lua_pushstring(L, input);
         if (lua_gettop(L) > 1)
         {
@@ -176,45 +114,4 @@ int get_command(lua_State* L)
             return 1;
     }
     return 0;
-}
-
-void* schedule_timer_thread(void* udata)
-{
-    lua_State* L = (lua_State*)udata;
-    int status, timer_active;
-    do {
-        timer_active = 0;
-        lhc_mutex_lock(&lock_lua_state);
-        lua_getglobal(L, "timer");
-        lua_pushnil(L);
-        while (lua_next(L, -2) != 0) 
-        {
-            if (!lua_istable(L, -1)) {
-                lhc_mutex_unlock(&lock_lua_state);
-                luaL_error(L, "Don't mess with me timers! This is only for tables!");
-                return NULL; /* never reached! */
-            }
-
-            timer_active = 1;
-            lua_rawgeti(L, -1, 1);
-            if ((long long)lua_tonumber(L, -1) <= time_ms()) 
-            {
-                lua_rawgeti(L, -2, 2);
-                status = lua_pcall(L, 0, 0, 0);
-                if (status != 0) {
-                    fprintf(stderr, "\rI accidentally the whole timer: %s\n", lua_tostring(L, -1));
-                    lua_pop(L, 1);
-                }
-                /* remove timed function */
-                lua_pushvalue(L, -3);
-                lua_pushnil(L);
-                lua_rawset(L, -6);
-            }
-            lua_pop(L, 2);
-        }
-        lua_pop(L, 1);
-        lhc_mutex_unlock(&lock_lua_state);
-    } while (timer_active);
-
-    return NULL;
 }
