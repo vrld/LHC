@@ -34,8 +34,10 @@
 
 #include "pa_assert.h"
 #include "commandline.h"
+#include "sounddata.h"
 
-int get_command(lua_State* L);
+static int get_command(lua_State* L);
+static int incomplete(lua_State* L);
 
 int main()
 {
@@ -44,14 +46,17 @@ int main()
     lua_State *L = luaL_newstate();
 
     luaL_openlibs(L);
+    lua_cpcall(L, luaopen_sounddata, NULL);
 
     PA_ASSERT_CMD(Pa_Initialize());
     /* run commandline */
-    while (get_command(L)) 
+    while (get_command(L))
     {
         error = luaL_loadbuffer(L, lua_tostring(L, 1), lua_strlen(L, 1), "input");
-        if (error)
+        if (error) {
             fprintf(stderr, "cannot load input: %s\n", lua_tostring(L, -1));
+            continue;
+        }
         error = lua_pcall(L, 0,0,0);
         if (error)
             fprintf(stderr, "cannot run input: %s\n", lua_tostring(L, -1));
@@ -64,8 +69,9 @@ int main()
 }
 
 /* from the lua interpreter */
-static int incomplete(lua_State* L, int status)
+static int incomplete(lua_State* L)
 {
+    int status = luaL_loadbuffer(L, lua_tostring(L, 1), lua_strlen(L, 1), "=stdin");
     if (status == LUA_ERRSYNTAX) {
         size_t lmsg;
         const char *msg = lua_tolstring(L, -1, &lmsg);
@@ -75,10 +81,11 @@ static int incomplete(lua_State* L, int status)
             return 1;
         }
     }
+    lua_pop(L,1);
     return 0;  /* else... */
 }
 
-int get_command(lua_State* L)
+static int get_command(lua_State* L)
 {
     static char in_buffer[LHC_CMDLINE_INPUT_BUFFER_SIZE];
     static char *input = in_buffer;
@@ -88,8 +95,6 @@ int get_command(lua_State* L)
 #ifdef WITH_GNU_READLINE
     rl_bind_key ('\t', rl_insert); /* TODO: tab completion on globals? */
 #endif
-
-    int status;
 
     lua_settop(L, 0);
     while (read_line(input, prompt))
@@ -108,9 +113,8 @@ int get_command(lua_State* L)
             lua_concat(L, 3);
         }
 
-        status = luaL_loadbuffer(L, lua_tostring(L, 1), lua_strlen(L, 1), "=stdin");
         prompt = prompt2;
-        if (!incomplete(L, status)) 
+        if (!incomplete(L))
             return 1;
     }
     return 0;

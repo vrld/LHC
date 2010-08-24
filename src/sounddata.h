@@ -49,6 +49,7 @@ int l_sounddata_set(lua_State* L);
 int l_sounddata_map(lua_State* L);
 int l_sounddata_add(lua_State* L);
 int l_sounddata_mul(lua_State* L);
+int l_sounddata_append(lua_State* L);
 int l_sounddata_new(lua_State* L);
 int luaopen_sounddata(lua_State* L);
 
