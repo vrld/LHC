@@ -89,6 +89,7 @@ if (ALL_FOUND)
     include_directories(${CMAKE_CURRENT_BINARY_DIR})
     add_subdir(SRCS src
         lhc.c
+        sounddata.c
     )
     add_executable(lhc ${SRCS})
     target_link_libraries(lhc ${LIBS})
