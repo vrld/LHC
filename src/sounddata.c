@@ -67,20 +67,6 @@ int l_sounddata_samplecount(lua_State* L)
     return 1;
 }
 
-int l_sounddata_play(lua_State* L)
-{
-    (void)L;
-    printf("play\n");
-    return 0;
-}
-
-int l_sounddata_stop(lua_State* L)
-{
-    (void)L;
-    printf("stop\n");
-    return 0;
-}
-
 int l_sounddata_gc(lua_State* L)
 {
     SoundData* data = l_sounddata_checksounddata(L, 1);
@@ -205,8 +191,6 @@ static void l_sounddata_push_metatable(lua_State* L)
         SETFUNCTION(L, -1, "channels", l_sounddata_channels);
         SETFUNCTION(L, -1, "samplecount", l_sounddata_samplecount);
 
-        SETFUNCTION(L, -1, "play", l_sounddata_play);
-        SETFUNCTION(L, -1, "stop", l_sounddata_stop);
         SETFUNCTION(L, -1, "set", l_sounddata_set);
         SETFUNCTION(L, -1, "get", l_sounddata_get);
         SETFUNCTION(L, -1, "map", l_sounddata_map);

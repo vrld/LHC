@@ -43,8 +43,6 @@ int l_sounddata_samplerate(lua_State* L);
 int l_sounddata_length(lua_State* L);
 int l_sounddata_channels(lua_State* L);
 int l_sounddata_samplecount(lua_State* L);
-int l_sounddata_play(lua_State* L);
-int l_sounddata_stop(lua_State* L);
 int l_sounddata_gc(lua_State* L);
 int l_sounddata_get(lua_State* L);
 int l_sounddata_set(lua_State* L);
