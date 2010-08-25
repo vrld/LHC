@@ -35,6 +35,7 @@
 #include "pa_assert.h"
 #include "commandline.h"
 #include "sounddata.h"
+#include "player.h"
 
 static int get_command(lua_State* L);
 static int incomplete(lua_State* L);
@@ -47,6 +48,7 @@ int main()
 
 	luaL_openlibs(L);
 	lua_cpcall(L, luaopen_sounddata, NULL);
+	lua_cpcall(L, luaopen_player, NULL);
 
 	PA_ASSERT_CMD(Pa_Initialize());
 	/* run commandline */
