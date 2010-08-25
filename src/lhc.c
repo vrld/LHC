@@ -41,81 +41,81 @@ static int incomplete(lua_State* L);
 
 int main()
 {
-    int error;
+	int error;
 
-    lua_State *L = luaL_newstate();
+	lua_State *L = luaL_newstate();
 
-    luaL_openlibs(L);
-    lua_cpcall(L, luaopen_sounddata, NULL);
+	luaL_openlibs(L);
+	lua_cpcall(L, luaopen_sounddata, NULL);
 
-    PA_ASSERT_CMD(Pa_Initialize());
-    /* run commandline */
-    while (get_command(L))
-    {
-        error = luaL_loadbuffer(L, lua_tostring(L, 1), lua_strlen(L, 1), "input");
-        if (error) {
-            fprintf(stderr, "cannot load input: %s\n", lua_tostring(L, -1));
-            continue;
-        }
-        error = lua_pcall(L, 0,0,0);
-        if (error)
-            fprintf(stderr, "cannot run input: %s\n", lua_tostring(L, -1));
-    }
+	PA_ASSERT_CMD(Pa_Initialize());
+	/* run commandline */
+	while (get_command(L))
+	{
+		error = luaL_loadbuffer(L, lua_tostring(L, 1), lua_strlen(L, 1), "input");
+		if (error) {
+			fprintf(stderr, "cannot load input: %s\n", lua_tostring(L, -1));
+			continue;
+		}
+		error = lua_pcall(L, 0,0,0);
+		if (error)
+			fprintf(stderr, "cannot run input: %s\n", lua_tostring(L, -1));
+	}
 
-    lua_close(L);
-    PA_ASSERT_CMD(Pa_Terminate());
+	lua_close(L);
+	PA_ASSERT_CMD(Pa_Terminate());
 
-    return 0;
+	return 0;
 }
 
 /* from the lua interpreter */
 static int incomplete(lua_State* L)
 {
-    int status = luaL_loadbuffer(L, lua_tostring(L, 1), lua_strlen(L, 1), "=stdin");
-    if (status == LUA_ERRSYNTAX) {
-        size_t lmsg;
-        const char *msg = lua_tolstring(L, -1, &lmsg);
-        const char *tp = msg + lmsg - (sizeof("'<eof>'") - 1);
-        if (strstr(msg, "'<eof>'") == tp) {
-            lua_pop(L, 1);
-            return 1;
-        }
-    }
-    lua_pop(L,1);
-    return 0;  /* else... */
+	int status = luaL_loadbuffer(L, lua_tostring(L, 1), lua_strlen(L, 1), "=stdin");
+	if (status == LUA_ERRSYNTAX) {
+		size_t lmsg;
+		const char *msg = lua_tolstring(L, -1, &lmsg);
+		const char *tp = msg + lmsg - (sizeof("'<eof>'") - 1);
+		if (strstr(msg, "'<eof>'") == tp) {
+			lua_pop(L, 1);
+			return 1;
+		}
+	}
+	lua_pop(L,1);
+	return 0;  /* else... */
 }
 
 static int get_command(lua_State* L)
 {
-    static char in_buffer[LHC_CMDLINE_INPUT_BUFFER_SIZE];
-    static char *input = in_buffer;
-    static const char* prompt1 = ">> ";
-    static const char* prompt2 = ".. ";
-    const char* prompt = prompt1;
+	static char in_buffer[LHC_CMDLINE_INPUT_BUFFER_SIZE];
+	static char *input = in_buffer;
+	static const char* prompt1 = ">> ";
+	static const char* prompt2 = ".. ";
+	const char* prompt = prompt1;
 #ifdef WITH_GNU_READLINE
-    rl_bind_key ('\t', rl_insert); /* TODO: tab completion on globals? */
+	rl_bind_key ('\t', rl_insert); /* TODO: tab completion on globals? */
 #endif
 
-    lua_settop(L, 0);
-    while (read_line(input, prompt))
-    {
-        if (strstr(input, "exit") == input)
-            return 0;
+	lua_settop(L, 0);
+	while (read_line(input, prompt))
+	{
+		if (strstr(input, "exit") == input)
+			return 0;
 
-        save_line(input);
+		save_line(input);
 
-        /* multiline input -- take a look at the original lua interpreter */
-        lua_pushstring(L, input);
-        if (lua_gettop(L) > 1)
-        {
-            lua_pushliteral(L, "\n");
-            lua_insert(L, -2);
-            lua_concat(L, 3);
-        }
+		/* multiline input -- take a look at the original lua interpreter */
+		lua_pushstring(L, input);
+		if (lua_gettop(L) > 1)
+		{
+			lua_pushliteral(L, "\n");
+			lua_insert(L, -2);
+			lua_concat(L, 3);
+		}
 
-        prompt = prompt2;
-        if (!incomplete(L))
-            return 1;
-    }
-    return 0;
+		prompt = prompt2;
+		if (!incomplete(L))
+			return 1;
+	}
+	return 0;
 }
