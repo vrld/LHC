@@ -51,6 +51,7 @@ int l_sounddata_gc(lua_State* L);
 int l_sounddata_get(lua_State* L);
 int l_sounddata_set(lua_State* L);
 int l_sounddata_map(lua_State* L);
+int l_sounddata_maptime(lua_State* L);
 int l_sounddata_add(lua_State* L);
 int l_sounddata_mul(lua_State* L);
 int l_sounddata_append(lua_State* L);

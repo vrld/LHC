@@ -55,8 +55,8 @@ static int pa_play_callback(const void *inputBuffer, void* outputBuffer,
 
 		/* multichannel output: samples are interleaved, e.g. stereo:
 		 * c1,1|c2,1|c1,2|c2,2|... */
-		for (c = 0; c < pi->data->channels; ++c)
-			*out++ = pi->data->samples[pi->pos * (c+1) + c];
+		for (c = 1; c <= pi->data->channels; ++c)
+			*out++ = pi->data->samples[pi->pos * pi->data->channels + c - 1];
 		pi->pos++;
 	}
 

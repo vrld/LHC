@@ -112,29 +112,36 @@ int l_sounddata_tostring(lua_State* L)
 	return 1;
 }
 
+int l_sounddata_clone(lua_State* L)
+{
+	(void)L;
+	return 0;
+}
+
 int l_sounddata_get(lua_State* L)
 {
 	SoundData* data = l_sounddata_checksounddata(L, 1);
-	int i, top = lua_gettop(L), n;
-	for (i = 1; i < top; ++i) {
-		n = luaL_checkint(L, i);
-		if (n < 0 || (size_t)n >= data->sample_count)
-			return luaL_error(L, "requested sample number out of bounds");
-		lua_pushnumber(L, data->samples[n]);
-	}
-	return top - 1;
+	int idx = luaL_checkint(L, 2);
+	int channel = luaL_checkint(L, 3);
+
+	size_t sample_idx = idx * data->channels + channel - 1;
+	if (sample_idx >= data->sample_count)
+		return luaL_error(L, "requested sample number out of bounds");
+	lua_pushnumber(L, data->samples[sample_idx]);
+
+	return 1;
 }
 
 int l_sounddata_set(lua_State* L)
 {
 	SoundData* data = l_sounddata_checksounddata(L, 1);
-	int i, top = lua_gettop(L), n;
-	for (i = 1; i < top; i += 2) {
-		n = luaL_checkint(L, i);
-		if (n < 0 || (size_t)n >= data->sample_count)
-			return luaL_error(L, "requested sample number out of bounds");
-		data->samples[n] = luaL_checknumber(L, i+1);
-	}
+	int idx = luaL_checkint(L, 2);
+	int channel = luaL_checkint(L, 3);
+
+	size_t sample_idx = idx * data->channels + channel - 1;
+	if (sample_idx >= data->sample_count)
+		return luaL_error(L, "requested sample number out of bounds");
+	data->samples[sample_idx] = luaL_checknumber(L, 4);
 
 	/* return sounddata */
 	lua_settop(L, 1);
@@ -148,13 +155,42 @@ int l_sounddata_map(lua_State* L)
 		return luaL_typerror(L, 2, "function");
 
 	size_t i;
+	int c;
 	for (i = 0; i < data->sample_count; ++i) {
-		lua_pushvalue(L, 2);
-		lua_pushinteger(L, i);
-		lua_pushnumber(L, data->samples[i]);
-		lua_call(L, 2, 1); /* TODO: error checking? */
-		data->samples[i] = lua_tonumber(L, -1);
-		lua_pop(L, 1);
+		for (c = 1; c <= data->channels; ++c) {
+			lua_pushvalue(L, 2);
+			lua_pushinteger(L, i);
+			lua_pushinteger(L, c);
+			lua_pushnumber(L, data->samples[i]);
+			lua_call(L, 3, 1); /* TODO: error checking? */
+			data->samples[i * data->channels + c - 1] = lua_tonumber(L, -1);
+			lua_pop(L, 1);
+		}
+	}
+
+	/* return sounddata */
+	lua_settop(L, 1);
+	return 1;
+}
+
+int l_sounddata_maptime(lua_State* L)
+{
+	SoundData* data = l_sounddata_checksounddata(L, 1);
+	if (lua_type(L, 2) != LUA_TFUNCTION)
+		return luaL_typerror(L, 2, "function");
+
+	size_t i;
+	int c;
+	for (i = 0; i < data->sample_count; ++i) {
+		for (c = 1; c <= data->channels; ++c) {
+			lua_pushvalue(L, 2);
+			lua_pushnumber(L, (double)i / data->rate);
+			lua_pushinteger(L, c);
+			lua_pushnumber(L, data->samples[i]);
+			lua_call(L, 3, 1); /* TODO: error checking? */
+			data->samples[i * data->channels + c - 1] = lua_tonumber(L, -1);
+			lua_pop(L, 1);
+		}
 	}
 
 	/* return sounddata */
@@ -259,9 +295,11 @@ static void l_sounddata_push_metatable(lua_State* L)
 		SETFUNCTION(L, -1, "to_index", l_sounddata_to_index);
 		SETFUNCTION(L, -1, "to_time", l_sounddata_to_time);
 
+		SETFUNCTION(L, -1, "clone", l_sounddata_clone);
 		SETFUNCTION(L, -1, "set", l_sounddata_set);
 		SETFUNCTION(L, -1, "get", l_sounddata_get);
 		SETFUNCTION(L, -1, "map", l_sounddata_map);
+		SETFUNCTION(L, -1, "maptime", l_sounddata_maptime);
 
 		SETFUNCTION(L, -1, "append", l_sounddata_append);
 		SETFUNCTION(L, -1, "__add", l_sounddata_add);
@@ -291,8 +329,8 @@ int l_sounddata_new(lua_State* L)
 
 	lua_getfield(L, -3, "channels");
 	int channels = luaL_optint(L, -1, 1);
-	if (channels != 1) /* TODO: more channels */
-		return luaL_error(L, "only singlechannel samples supported atm, sorry");
+	if (channels < 1)
+		return luaL_error(L, "Need at least one channel");
 
 	/* clear stack */
 	lua_pop(L, 4);
@@ -302,10 +340,10 @@ int l_sounddata_new(lua_State* L)
 	data->len = len;
 	data->channels = channels;
 	data->refcount = 1;
-	data->sample_count = (size_t)(ceil(rate * len)) * channels;
+	data->sample_count = (size_t)(ceil(rate * len));
 
-	data->samples = (float*)malloc(data->sample_count * sizeof(float));
-	for (i = 0; i < data->sample_count; ++i)
+	data->samples = (float*)malloc(data->sample_count * channels * sizeof(float));
+	for (i = 0; i < data->sample_count * channels; ++i)
 		data->samples[i] = .0;
 
 	l_sounddata_push_metatable(L);
