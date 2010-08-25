@@ -135,7 +135,10 @@ int l_sounddata_set(lua_State* L)
 			return luaL_error(L, "requested sample number out of bounds");
 		data->samples[n] = luaL_checknumber(L, i+1);
 	}
-	return 0;
+
+	/* return sounddata */
+	lua_settop(L, 1);
+	return 1;
 }
 
 int l_sounddata_map(lua_State* L)
@@ -154,7 +157,9 @@ int l_sounddata_map(lua_State* L)
 		lua_pop(L, 1);
 	}
 
-	return 0;
+	/* return sounddata */
+	lua_settop(L, 1);
+	return 1;
 }
 
 static int l_sounddata_push_result_data(lua_State*L, SoundData* d1, SoundData* d2, double len)
@@ -179,6 +184,7 @@ static int l_sounddata_push_result_data(lua_State*L, SoundData* d1, SoundData* d
 
 int l_sounddata_add(lua_State* L)
 {
+	lua_settop(L, 2);
 	SoundData* d1 = l_sounddata_checksounddata(L, 1);
 	SoundData* d2 = l_sounddata_checksounddata(L, 2);
 
@@ -198,6 +204,7 @@ int l_sounddata_add(lua_State* L)
 
 int l_sounddata_mul(lua_State* L)
 {
+	lua_settop(L, 2);
 	SoundData* d1 = l_sounddata_checksounddata(L, 1);
 	SoundData* d2 = l_sounddata_checksounddata(L, 2);
 
@@ -217,6 +224,7 @@ int l_sounddata_mul(lua_State* L)
 
 int l_sounddata_append(lua_State* L)
 {
+	lua_settop(L, 2);
 	SoundData* d1 = l_sounddata_checksounddata(L, 1);
 	SoundData* d2 = l_sounddata_checksounddata(L, 2);
 
@@ -287,7 +295,7 @@ int l_sounddata_new(lua_State* L)
 		return luaL_error(L, "only singlechannel samples supported atm, sorry");
 
 	/* clear stack */
-	lua_pop(L, 3);
+	lua_pop(L, 4);
 
 	SoundData* data = (SoundData*)lua_newuserdata(L, sizeof(SoundData));
 	data->rate = rate;
