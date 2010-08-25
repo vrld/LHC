@@ -27,7 +27,131 @@ Windows (not tested):
 
 === Usage ===
 
-Not yet...
+SoundData:
+
+  The SoundData object contains - as the name suggests - data required
+  to create sound:
+
+  - the length of the sound,
+  - the samplerate, e.g. the number of samples per second and
+  - the samples itself, stored as values between -1 and 1.
+
+  The API:
+
+  function SoundData{len = <number>, rate = <number>, channels = <number>}
+    Creates a new SoundData object. Every argument can be omitted.
+    Arguments:
+       - [number] len: The length of the sound in seconds. Default: length = 1s
+       - [number] rate: The samplerate in Hz. Default: 44100 Hz.
+       - [number] channels: Number of channels. Default: 1
+    Returns:
+       The SoundData object.
+
+  function SD{len = <number>, rate = <number>, channels = <number>}
+    Alias to SoundData{...}
+
+
+  function SoundData:samplerate()
+    Returns the samplerate in Hz.
+
+  function SoundData:length()
+    Returns the length of the sound in seconds.
+
+  function SoundData:channels()
+    Returns the number of channels.
+
+  function SoundData:samplecount()
+    Returns the number of samples (= length * samplerate)
+
+
+  function SoundData:to_index(t)
+    Converts time to sample index (index = t * samplerate).
+    Arguments:
+      - [number] t: Time to convert.
+    Returns:
+      Index of the sample corresponding to t.
+
+  function SoundData:to_time(index)
+    Converts sample index to time (t = index / samplerate)
+    Arguments:
+      - [number] index: Index to convert.
+    Returns:
+      Time corresponding to sample index.
+
+
+  function SoundData:clone()
+
+  function SoundData:set(index, channel, value)
+    Sets the sample at the given index to value.
+
+  function SoundData:get(index, channel)
+    Returns the sample at the given channel and index.
+
+  function SoundData:map( function )
+    Call a function for every sample and set it to the return value
+    of the function.
+    The function retrieves the index, channel and current value as
+    argument and should return a number.
+    Arguments:
+      - [function] function: The function to apply.
+    Returns:
+      The SoundData object.
+    Example:
+      -- compress samples
+      s:map(function(i,c,v) return math.tanh(v) end)
+
+  function SoundData:maptime( function )
+    Same as map, but with time as first argument rater than an index.
+    Example:
+      -- create sine with different frequency per channel
+      s:maptime(function(t,c,v) return math.sin(2 * math.pi * 440 * c * t) end
+
+
+  function SoundData:append( sd )
+    Concatenate SoundData. Returns a new SoundData object which contains
+    the samples of the other two objects.
+    Both SoundData objects must have the same samplerate and number of
+    channels.
+
+  SoundData + SoundData
+    Creates new SoundData object where the samples are the sum of each
+    sample pair of the summands.
+    Both SoundData objects must have the same samplerate and number of
+    channels.
+
+  SoundData * SoundData
+    Creates new SoundData object where the samples are the product of each
+    sample pair of the coefficients.
+    Both SoundData objects must have the same samplerate and number of
+    channels.
+
+
+
+Player:
+
+  A Player object outputs SoundData objects to your speakers.
+
+  API:
+
+  function Player( sd )
+    Creates a new player object.
+    Parameters:
+      - [SoundData] sd: The SoundData object to play.
+    Returns:
+      The player object.
+
+  function Player:play()
+    Starts playing.
+
+  function Player:stop()
+    Stops playing.
+
+  function Player:set_loop( loop )
+    Sets continuous playing (loop = true) or single playing (loop = false).
+
+  function Player:is_looping()
+    Returns true if the player is looping, false otherwise.
+
 
 === License ===
 Copyright (c) 2010 Matthias Richter
