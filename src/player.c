@@ -77,29 +77,34 @@ PlayerInfo* l_player_checkplayer(lua_State* L, int idx)
 
 int l_player_start(lua_State* L)
 {
-	PlayerInfo* pi = l_player_checkplayer(L, 1);
-	if (Pa_IsStreamStopped(pi->stream) == 1) {
-		pi->pos = 0;
-		PA_ASSERT_CMD( Pa_StartStream(pi->stream) );
-	}
+	l_player_stop(L);
 
-	return 0;
+	PlayerInfo* pi = l_player_checkplayer(L, 1);
+	pi->pos = 0;
+	PA_ASSERT_CMD( Pa_StartStream(pi->stream) );
+
+	/* return player */
+	return 1;
 }
 
 int l_player_stop(lua_State *L)
 {
 	PlayerInfo* pi = l_player_checkplayer(L, 1);
-	if (Pa_IsStreamActive(pi->stream) == 1)
+	if (Pa_IsStreamStopped(pi->stream) == 0) {
 		PA_ASSERT_CMD( Pa_StopStream(pi->stream) );
+	}
 
-	return 0;
+	/* return player */
+	return 1;
 }
 
 int l_player_set_loop(lua_State* L)
 {
 	PlayerInfo* pi = l_player_checkplayer(L, 1);
 	pi->looping = lua_toboolean(L, 2);
-	return 0;
+
+	/* return player */
+	return 1;
 }
 
 int l_player_is_looping(lua_State* L)
@@ -138,10 +143,11 @@ int l_player_new(lua_State* L)
 	pi->data = data;
 	pi->data->refcount++;
 	pi->pos = 0;
+	pi->looping = 0;
 
-	PA_ASSERT_CMD(Pa_OpenDefaultStream(&pi->stream, 0, pi->data->channels,
+	PA_ASSERT_CMD( Pa_OpenDefaultStream(&pi->stream, 0, pi->data->channels,
 				paFloat32, pi->data->rate, paFramesPerBufferUnspecified,
-				pa_play_callback, pi));
+				pa_play_callback, pi) );
 
 	if (luaL_newmetatable(L, "lhc.PlayerInfo")) {
 		SETFUNCTION(L, -1, "play", l_player_start);
