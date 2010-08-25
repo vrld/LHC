@@ -30,12 +30,14 @@
 #include <lua.h>
 
 typedef struct _SoundData {
-    double rate;
-    double len;
-    int channels;
+	double rate;
+	double len;
+	int channels;
 
-    size_t sample_count;
-    double* samples;
+	int refcount;
+
+	size_t sample_count;
+	float* samples;
 } SoundData;
 
 SoundData* l_sounddata_checksounddata(lua_State* L, int idx);
@@ -43,6 +45,8 @@ int l_sounddata_samplerate(lua_State* L);
 int l_sounddata_length(lua_State* L);
 int l_sounddata_channels(lua_State* L);
 int l_sounddata_samplecount(lua_State* L);
+int l_sounddata_to_index(lua_State* L);
+int l_sounddata_to_time(lua_State* L);
 int l_sounddata_gc(lua_State* L);
 int l_sounddata_get(lua_State* L);
 int l_sounddata_set(lua_State* L);
