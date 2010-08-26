@@ -161,7 +161,7 @@ int l_sounddata_map(lua_State* L)
 			lua_pushvalue(L, 2);
 			lua_pushinteger(L, i);
 			lua_pushinteger(L, c);
-			lua_pushnumber(L, data->samples[i]);
+			lua_pushnumber(L, data->samples[i * data->channels + c - 1]);
 			lua_call(L, 3, 1); /* TODO: error checking? */
 			data->samples[i * data->channels + c - 1] = lua_tonumber(L, -1);
 			lua_pop(L, 1);
@@ -186,7 +186,7 @@ int l_sounddata_maptime(lua_State* L)
 			lua_pushvalue(L, 2);
 			lua_pushnumber(L, (double)i / data->rate);
 			lua_pushinteger(L, c);
-			lua_pushnumber(L, data->samples[i]);
+			lua_pushnumber(L, data->samples[i * data->channels + c - 1]);
 			lua_call(L, 3, 1); /* TODO: error checking? */
 			data->samples[i * data->channels + c - 1] = lua_tonumber(L, -1);
 			lua_pop(L, 1);
