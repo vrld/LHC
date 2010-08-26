@@ -49,6 +49,7 @@ int main()
 	luaL_openlibs(L);
 	lua_cpcall(L, luaopen_sounddata, NULL);
 	lua_cpcall(L, luaopen_player, NULL);
+	(void)luaL_dofile(L, "stdlib.lua");
 
 	PA_ASSERT_CMD(Pa_Initialize());
 	/* run commandline */
