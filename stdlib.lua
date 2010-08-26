@@ -18,34 +18,142 @@ function env.risefall(t, risetime, plateautime, falltime)
 	return math.max(0, math.min(t / risetime, 1, 1 - (t - (risetime+plateautime)) / falltime))
 end
 
-function compress(sd)
-	sd:map(function(_,_,v) return math.tanh(v) end)
+
+-- additional helpers for SoundData objects
+local SD_meta = getmetatable(SD{})
+
+-- basic helpers
+function SD_meta:maptime(func)
+	return self:map(function(i,c,v) return func(i / self:samplerate(), c, v) end)
 end
 
-function play(sd)
-	local p = Player(sd)
+function SD_meta:clone()
+	local ret = SD{len = self:length(), rate = self:samplerate(), channels = self:channels()}
+	return ret:map(function(i,c) return self:get(i,c) end)
+end
+
+-- combination
+function SD_meta:__add(other)
+	assert(self:samplerate() == other:samplerate(), "Sample rate does not match")
+	assert(self:channels() == other:channels(), "Cannel count does not match")
+
+	local ret = SD{len = math.max(self:length(), other:length()), rate = self:samplerate(), channels = self:channels()}
+	return ret:map(function(i,c) return self:get(i,c) + other:get(i,c) end)
+end
+
+function SD_meta:__sub(other)
+	assert(self:samplerate() == other:samplerate(), "Sample rate does not match")
+	assert(self:channels() == other:channels(), "Cannel count does not match")
+
+	local ret = SD{len = math.max(self:length(), other:length()), rate = self:samplerate(), channels = self:channels()}
+	return ret:map(function(i,c) return self:get(i,c) - other:get(i,c) end)
+end
+
+function SD_meta:__mul(other)
+	assert(self:samplerate() == other:samplerate(), "Sample rate does not match")
+	assert(self:channels() == other:channels(), "Cannel count does not match")
+
+	local ret = SD{len = math.max(self:length(), other:length()), rate = self:samplerate(), channels = self:channels()}
+	return ret:map(function(i,c) return self:get(i,c) * other:get(i,c) end)
+end
+
+function SD_meta:append(other)
+	assert(self:samplerate() == other:samplerate(), "Sample rate does not match")
+	assert(self:channels() == other:channels(), "Cannel count does not match")
+
+	local ret = SD{len = self:length() + other:length(), rate = self:samplerate(), channels = self:channels()}
+	return ret:map(function(i,c)
+		if i < self:samplecount() then
+			return self:get(i,c)
+		end
+		return other:get(i - self:samplecount(), c)
+	end)
+end
+
+-- generators
+function SD_meta:makeRect(...)
+	local freq = {...}
+	assert(#freq == 1 or #freq == self:channels(), "Wrong number of frequencies supplied")
+	return self:maptime(function(t,c) return osc.rect(t,freq[c % #freq + 1]) end)
+end
+function SD_meta:makeSaw(...)
+	local freq = {...}
+	assert(#freq == 1 or #freq == self:channels(), "Wrong number of frequencies supplied")
+	return self:maptime(function(t,c) return osc.saw(t,freq[c % #freq + 1]) end)
+end
+function SD_meta:makeTriangle(...)
+	local freq = {...}
+	assert(#freq == 1 or #freq == self:channels(), "Wrong number of frequencies supplied")
+	return self:maptime(function(t,c) return osc.tri(t,freq[c % #freq + 1]) end)
+end
+function SD_meta:makeSin(...)
+	local freq = {...}
+	assert(#freq == 1 or #freq == self:channels(), "Wrong number of frequencies supplied")
+	return self:maptime(function(t,c) return osc.sin(t,freq[c % #freq + 1]) end)
+end
+function SD_meta:makeNoise(f)
+	return self:map(osc.wn)
+end
+
+-- converters
+function SD_meta:to_sample_rate(rate)
+	local ret = SD{len = self:length(), rate = rate, channels = self:channels()}
+	local scaleFactor = self:samplerate() / rate
+	ret:map(function(i,c) return self:get(i * scaleFactor, c) end)
+	return ret
+end
+
+function SD_meta:quantized(quants)
+	local quants = quants / 2
+	self:clone():map(function(i,_,v)
+		if v > 0 then
+			return math.ceil(v * quants) / quants
+		end
+		return math.floor(v * quants) / quants
+	end)
+	return self
+end
+
+function SD_meta:compressed()
+	self:clone():map(function(_,_,v) return math.tanh(v) end)
+	return self
+end
+
+function SD_meta:normalized()
+	local max = 0
+	self:clone():map(function(_,_,v)
+		local w = math.abs(v)
+		if w > max then max = w end
+		return v
+	end)
+	self:map(function(_,_,v) return v / max end)
+	return self
+end
+
+-- player functions
+function SD_meta:play()
+	local p = Player(self)
 	p:play()
 	return p
 end
 
-function loop(sd)
-	local p = Player(sd)
+function SD_meta:loop()
+	local p = Player(self)
 	p:set_loop(true)
 	p:play()
 	return p
 end
 
 -- useful for gnuplot output
-function dump_to_file(sd, filename)
+function SD_meta:dump_to_file(filename)
 	local f = io.open(filename, 'w')
-	sd:maptime(function(t,c,v)
+	self:maptime(function(t,c,v)
 		if c == 1 then 
-			f:write(string.format("%f    %f    ", t, v))
-		elseif c == sd:channels() then 
-			f:write(string.format("%f\n", v))
+			f:write(string.format("%f    %f", t, v))
 		else
-			f:write(string.format("%f    ", v))
+			f:write(string.format("    %f", v))
 		end
+		if c == self:channels() then f:write("\n") end
 		return v
 	end)
 end

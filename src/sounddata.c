@@ -112,20 +112,17 @@ int l_sounddata_tostring(lua_State* L)
 	return 1;
 }
 
-int l_sounddata_clone(lua_State* L)
-{
-	(void)L;
-	return 0;
-}
-
 int l_sounddata_get(lua_State* L)
 {
 	SoundData* data = l_sounddata_checksounddata(L, 1);
 	int idx = luaL_checkint(L, 2);
 	int channel = luaL_checkint(L, 3);
 
+	if (channel <= 0 || channel > data->channels)
+		return luaL_error(L, "channel %d out of bounds (has to be 0 < channel < %d)", channel, data->channels);
+
 	size_t sample_idx = idx * data->channels + channel - 1;
-	if (sample_idx >= data->sample_count)
+	if (sample_idx >= data->sample_count * data->channels)
 		return luaL_error(L, "requested sample number out of bounds");
 	lua_pushnumber(L, data->samples[sample_idx]);
 
@@ -138,8 +135,11 @@ int l_sounddata_set(lua_State* L)
 	int idx = luaL_checkint(L, 2);
 	int channel = luaL_checkint(L, 3);
 
+	if (channel <= 0 || channel > data->channels)
+		return luaL_error(L, "channel %d out of bounds (has to be 0 < channel < %d)", channel, data->channels);
+
 	size_t sample_idx = idx * data->channels + channel - 1;
-	if (sample_idx >= data->sample_count)
+	if (sample_idx >= data->sample_count * data->channels)
 		return luaL_error(L, "requested sample number out of bounds");
 	data->samples[sample_idx] = luaL_checknumber(L, 4);
 
@@ -173,112 +173,6 @@ int l_sounddata_map(lua_State* L)
 	return 1;
 }
 
-int l_sounddata_maptime(lua_State* L)
-{
-	SoundData* data = l_sounddata_checksounddata(L, 1);
-	if (lua_type(L, 2) != LUA_TFUNCTION)
-		return luaL_typerror(L, 2, "function");
-
-	size_t i;
-	int c;
-	for (i = 0; i < data->sample_count; ++i) {
-		for (c = 1; c <= data->channels; ++c) {
-			lua_pushvalue(L, 2);
-			lua_pushnumber(L, (double)i / data->rate);
-			lua_pushinteger(L, c);
-			lua_pushnumber(L, data->samples[i * data->channels + c - 1]);
-			lua_call(L, 3, 1); /* TODO: error checking? */
-			data->samples[i * data->channels + c - 1] = lua_tonumber(L, -1);
-			lua_pop(L, 1);
-		}
-	}
-
-	/* return sounddata */
-	lua_settop(L, 1);
-	return 1;
-}
-
-static int l_sounddata_push_result_data(lua_State*L, SoundData* d1, SoundData* d2, double len)
-{
-	if (d1->rate != d2->rate)
-		return luaL_error(L, "sample rate does not match");
-
-	if (d1->channels != d2->channels) /* TODO: channel multiplying */
-		return luaL_error(L, "channel count does not match");
-
-	lua_createtable(L, 0, 2);
-	lua_pushnumber(L, d1->rate);
-	lua_setfield(L, -2, "rate");
-	lua_pushnumber(L, len);
-	lua_setfield(L, -2, "len");
-	lua_pushinteger(L, d2->channels);
-	lua_setfield(L, -2, "channels");
-
-	l_sounddata_new(L);
-	return 0;
-}
-
-int l_sounddata_add(lua_State* L)
-{
-	lua_settop(L, 2);
-	SoundData* d1 = l_sounddata_checksounddata(L, 1);
-	SoundData* d2 = l_sounddata_checksounddata(L, 2);
-
-	l_sounddata_push_result_data(L, d1, d2, d1->len > d2->len ? d1->len : d2->len);
-	SoundData* res = l_sounddata_checksounddata(L, 3);
-
-	size_t i;
-	double v1, v2;
-	for (i = 0; i < res->sample_count * res->channels; ++i) {
-		v1 = i < d1->sample_count * res->channels ? d1->samples[i] : .0;
-		v2 = i < d2->sample_count * res->channels ? d2->samples[i] : .0;
-		res->samples[i] = v1 + v2;
-	}
-
-	return 1;
-}
-
-int l_sounddata_mul(lua_State* L)
-{
-	lua_settop(L, 2);
-	SoundData* d1 = l_sounddata_checksounddata(L, 1);
-	SoundData* d2 = l_sounddata_checksounddata(L, 2);
-
-	l_sounddata_push_result_data(L, d1, d2, d1->len > d2->len ? d1->len : d2->len);
-	SoundData* res = l_sounddata_checksounddata(L, 3);
-
-	size_t i;
-	double v1, v2;
-	for (i = 0; i < res->sample_count * res->channels; ++i) {
-		v1 = i < d1->sample_count * res->channels ? d1->samples[i] : 1.;
-		v2 = i < d2->sample_count * res->channels ? d2->samples[i] : 1.;
-		res->samples[i] = v1 * v2;
-	}
-
-	return 1;
-}
-
-int l_sounddata_append(lua_State* L)
-{
-	lua_settop(L, 2);
-	SoundData* d1 = l_sounddata_checksounddata(L, 1);
-	SoundData* d2 = l_sounddata_checksounddata(L, 2);
-
-	l_sounddata_push_result_data(L, d1, d2, d1->len + d2->len);
-	SoundData* res = l_sounddata_checksounddata(L, 3);
-	assert(d1->sample_count + d2->sample_count == res->sample_count);
-
-	size_t i;
-	for (i = 0; i < d1->sample_count * res->channels; ++i) {
-		res->samples[i] = d1->samples[i];
-	}
-	for (i = d1->sample_count; i < res->sample_count * res->channels; ++i) {
-		res->samples[i] = d2->samples[i - d1->sample_count * res->channels];
-	}
-
-	return 1;
-}
-
 #define SETFUNCTION(L, idx, name, func) \
 	lua_pushcfunction((L), (func)); \
 	lua_setfield((L), (idx)-1, (name))
@@ -295,15 +189,10 @@ static void l_sounddata_push_metatable(lua_State* L)
 		SETFUNCTION(L, -1, "to_index", l_sounddata_to_index);
 		SETFUNCTION(L, -1, "to_time", l_sounddata_to_time);
 
-		SETFUNCTION(L, -1, "clone", l_sounddata_clone);
 		SETFUNCTION(L, -1, "set", l_sounddata_set);
 		SETFUNCTION(L, -1, "get", l_sounddata_get);
 		SETFUNCTION(L, -1, "map", l_sounddata_map);
-		SETFUNCTION(L, -1, "maptime", l_sounddata_maptime);
 
-		SETFUNCTION(L, -1, "append", l_sounddata_append);
-		SETFUNCTION(L, -1, "__add", l_sounddata_add);
-		SETFUNCTION(L, -1, "__mul", l_sounddata_mul);
 		SETFUNCTION(L, -1, "__gc", l_sounddata_gc);
 		SETFUNCTION(L, -1, "__tostring", l_sounddata_tostring);
 		lua_pushvalue(L, -1);
