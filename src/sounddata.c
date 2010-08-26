@@ -229,9 +229,9 @@ int l_sounddata_add(lua_State* L)
 
 	size_t i;
 	double v1, v2;
-	for (i = 0; i < res->sample_count; ++i) {
-		v1 = i < d1->sample_count ? d1->samples[i] : .0;
-		v2 = i < d2->sample_count ? d2->samples[i] : .0;
+	for (i = 0; i < res->sample_count * res->channels; ++i) {
+		v1 = i < d1->sample_count * res->channels ? d1->samples[i] : .0;
+		v2 = i < d2->sample_count * res->channels ? d2->samples[i] : .0;
 		res->samples[i] = v1 + v2;
 	}
 
@@ -249,9 +249,9 @@ int l_sounddata_mul(lua_State* L)
 
 	size_t i;
 	double v1, v2;
-	for (i = 0; i < res->sample_count; ++i) {
-		v1 = i < d1->sample_count ? d1->samples[i] : 1.;
-		v2 = i < d2->sample_count ? d2->samples[i] : 1.;
+	for (i = 0; i < res->sample_count * res->channels; ++i) {
+		v1 = i < d1->sample_count * res->channels ? d1->samples[i] : 1.;
+		v2 = i < d2->sample_count * res->channels ? d2->samples[i] : 1.;
 		res->samples[i] = v1 * v2;
 	}
 
@@ -269,11 +269,11 @@ int l_sounddata_append(lua_State* L)
 	assert(d1->sample_count + d2->sample_count == res->sample_count);
 
 	size_t i;
-	for (i = 0; i < d1->sample_count; ++i) {
+	for (i = 0; i < d1->sample_count * res->channels; ++i) {
 		res->samples[i] = d1->samples[i];
 	}
-	for (i = d1->sample_count; i < res->sample_count; ++i) {
-		res->samples[i] = d2->samples[i - d1->sample_count];
+	for (i = d1->sample_count; i < res->sample_count * res->channels; ++i) {
+		res->samples[i] = d2->samples[i - d1->sample_count * res->channels];
 	}
 
 	return 1;
