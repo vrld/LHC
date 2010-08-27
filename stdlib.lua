@@ -6,18 +6,23 @@ function osc.sin(t, f) return math.sin(2 * math.pi * f * t) end
 function osc.wn() return math.random() * 2 - 1 end
 
 env = {}
-function env.rise(t, len, offset)
+function env.rise(len, offset)
 	local offset = offset or 0
-	return math.max(0, math.min(1, (t-offset) / len))
+	return function(t)
+		return math.max(0, math.min(1, (t-offset) / len))
+	end
 end
-function env.fall(t, len, offset)
+function env.fall(len, offset)
 	local offset = offset or 0
-	return math.max(0, math.min(1, 1 - (t-offset) / len))
+	return function(t)
+		return math.max(0, math.min(1, 1 - (t-offset) / len))
+	end
 end
-function env.risefall(t, risetime, plateautime, falltime)
-	return math.max(0, math.min(t / risetime, 1, 1 - (t - (risetime+plateautime)) / falltime))
+function env.risefall(risetime, plateautime, falltime)
+	return function(t)
+		return math.max(0, math.min(t / risetime, 1, 1 - (t - (risetime+plateautime)) / falltime))
+	end
 end
-
 
 -- additional helpers for SoundData objects
 local SD_meta = getmetatable(SD{})
@@ -116,6 +121,11 @@ function SD_meta:makeSin(...)
 end
 function SD_meta:makeNoise(f)
 	return self:map(osc.wn)
+end
+
+-- map envelope
+function SD_meta:envelope( func )
+	return self:maptime(function(t,c,v) return v * func(t,c) end)
 end
 
 -- converters
