@@ -34,6 +34,7 @@
 
 #include "commandline.h"
 #include "sounddata.h"
+#include "soundfile.h"
 #include "player.h"
 
 static int get_command(lua_State* L);
@@ -47,8 +48,13 @@ int main()
 
 	luaL_openlibs(L);
 	lua_cpcall(L, luaopen_sounddata, NULL);
+	lua_cpcall(L, luaopen_soundfile, NULL);
 	lua_cpcall(L, luaopen_player, NULL);
-	(void)luaL_dofile(L, "stdlib.lua");
+	error = luaL_dofile(L, "stdlib.lua");
+	if (error) {
+		fprintf(stderr, "error opening stdlib: %s\n", lua_tostring(L, -1));
+		return -1;
+	}
 
 	PaError pa_error = Pa_Initialize();
 	if (pa_error != paNoError) {

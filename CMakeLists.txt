@@ -12,25 +12,18 @@ endif (CMAKE_COMPILER_IS_GNUCC)
 set(ALL_FOUND TRUE)
 
 option(WITH_GNU_READLINE "Use GNU readline for input" ON)
-set(SAMPLE_BUFFER_SIZE 16384 CACHE STRING "Length of a sample buffer")
-set(SAMPLE_BUFFER_COUNT 2 CACHE STRING "Number of buffers for playing signals. Has to be >= 2")
-set(SAMPLERATE 44100 CACHE STRING "Sample rate of audio signals. Higher samplerates means better quality, but also more computing time")
 
 # PortAudio
 find_library(PA_LIBRARY NAMES portaudio)
 find_path(PA_INCLUDE_DIR portaudio.h)
 set(PA_FOUND FALSE)
 if (PA_LIBRARY AND PA_INCLUDE_DIR)
-	set(PA_FOUND TRUE)
-endif (PA_LIBRARY AND PA_INCLUDE_DIR)
-
-if (PA_FOUND)
 	include_directories(${PA_INCLUDE_DIR})
 	set(LIBS ${LIBS} ${OPENAL_LIBRARY} ${PA_LIBRARY})
-else (PA_FOUND)
+else (PA_LIBRARY AND PA_INCLUDE_DIR)
 	message("Cannot find PortAudio")
 	set(ALL_FOUND FALSE)
-endif (PA_FOUND)
+endif (PA_LIBRARY AND PA_INCLUDE_DIR)
 
 # lua
 find_package(Lua51)
@@ -44,19 +37,28 @@ endif (LUA51_FOUND)
 
 # FFTW3
 find_path(FFTW3_INCLUDE_DIR fftw3.h)
-find_library(FFTW3_LIBRARY NAMES fftw3) 
+find_library(FFTW3_LIBRARY NAMES fftw3)
 
 if (FFTW3_INCLUDE_DIR AND FFTW3_LIBRARY)
-	set(FFTW3_FOUND TRUE)
-endif (FFTW3_INCLUDE_DIR AND FFTW3_LIBRARY)
-
-if (FFTW3_FOUND)
 	include_directories(${FFTW3_INCLUDE_DIR})
 	set(LIBS ${LIBS} ${FFTW3_LIBRARY})
-else (FFTW3_FOUND)
+else (FFTW3_INCLUDE_DIR AND FFTW3_LIBRARY)
 	message("Cannot find FFTW3")
 	set(ALL_FOUND FALSE)
-endif (FFTW3_FOUND)
+endif (FFTW3_INCLUDE_DIR AND FFTW3_LIBRARY)
+
+# libsndfile
+find_path(SNDFILE_INCLUDE_DIR sndfile.h)
+find_library(SNDFILE_LIBRARY NAMES sndfile)
+
+if (SNDFILE_INCLUDE_DIR AND SNDFILE_LIBRARY)
+	include_directories(${SNDFILE_INCLUDE_DIR})
+	set(LIBS ${LIBS} ${SNDFILE_LIBRARY})
+else (SNDFILE_INCLUDE_DIR AND SNDFILE_LIBRARY)
+	message("Cannot find libsoundfile")
+	set(ALL_FOUND FALSE)
+endif (SNDFILE_INCLUDE_DIR AND SNDFILE_LIBRARY)
+
 
 # readline
 if (WITH_GNU_READLINE)
@@ -64,18 +66,13 @@ if (WITH_GNU_READLINE)
 	find_library(READLINE_LIBRARY NAMES readline) 
 
 	if (READLINE_INCLUDE_DIR AND READLINE_LIBRARY)
-		set(READLINE_FOUND TRUE)
-	endif (READLINE_INCLUDE_DIR AND READLINE_LIBRARY)
-
-	if (READLINE_FOUND)
 		include_directories(${READLINE_INCLUDE_DIR})
 		set(LIBS ${LIBS} ${READLINE_LIBRARY})
-	else (READLINE_FOUND)
+	else (READLINE_INCLUDE_DIR AND READLINE_LIBRARY)
 		message("Cannot find GNU Readline")
 		set(ALL_FOUND FALSE)
-	endif (READLINE_FOUND)
+	endif (READLINE_INCLUDE_DIR AND READLINE_LIBRARY)
 endif (WITH_GNU_READLINE)
-
 
 macro(add_subdir var dir)
 	foreach (file ${ARGN})
@@ -90,6 +87,7 @@ if (ALL_FOUND)
 	add_subdir(SRCS src
 		lhc.c
 		sounddata.c
+		soundfile.c
 		player.c
 		)
 	add_executable(lhc ${SRCS})
