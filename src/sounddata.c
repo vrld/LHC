@@ -200,23 +200,29 @@ static void l_sounddata_push_metatable(lua_State* L)
 	}
 }
 
+#define GETFIELD_OPT(L, idx, name1, name2) \
+	lua_getfield(L, idx, name1); \
+	if (lua_isnil(L, -1)) { \
+		lua_pop(L, 1); \
+		lua_getfield(L, idx, name2); \
+	}
 int l_sounddata_new(lua_State* L)
 {
 	size_t i;
 	if (!lua_istable(L, -1))
 		return luaL_typerror(L, 1, "table");
 
-	lua_getfield(L, -1, "rate");
+	GETFIELD_OPT(L, -1, "rate", "samplerate");
 	double rate = luaL_optnumber(L, -1, 44100);
 	if (rate <= 0)
 		return luaL_error(L, "invalid sample rate");
 
-	lua_getfield(L, -2, "len");
+	GETFIELD_OPT(L, -2, "len", "length");
 	double len = luaL_optnumber(L, -1, 1);
 	if (len <= .0)
-		return luaL_error(L, "invalid length");
+		return luaL_error(L, "invalid SoundData length");
 
-	lua_getfield(L, -3, "channels");
+	GETFIELD_OPT(L, -3, "ch", "channels");
 	int channels = luaL_optint(L, -1, 1);
 	if (channels < 1)
 		return luaL_error(L, "Need at least one channel");

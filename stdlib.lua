@@ -33,7 +33,7 @@ function SD_meta:maptime(func)
 end
 
 function SD_meta:clone()
-	local ret = SD{len = self:length(), rate = self:samplerate(), channels = self:channels()}
+	local ret = SD{len = self:length(), rate = self:samplerate(), ch = self:channels()}
 	return ret:map(function(i,c) return self:get(i,c) end)
 end
 
@@ -42,7 +42,7 @@ function SD_meta:__add(other)
 	assert(self:samplerate() == other:samplerate(), "Sample rate does not match")
 	assert(self:channels() == other:channels(), "Cannel count does not match")
 
-	local ret = SD{len = math.max(self:length(), other:length()), rate = self:samplerate(), channels = self:channels()}
+	local ret = SD{len = math.max(self:length(), other:length()), rate = self:samplerate(), ch = self:channels()}
 	return ret:map(function(i,c)
 		local a = i < self:samplecount() and self:get(i,c) or 0
 		local b = i < other:samplecount() and other:get(i,c) or 0
@@ -54,7 +54,7 @@ function SD_meta:__sub(other)
 	assert(self:samplerate() == other:samplerate(), "Sample rate does not match")
 	assert(self:channels() == other:channels(), "Cannel count does not match")
 
-	local ret = SD{len = math.max(self:length(), other:length()), rate = self:samplerate(), channels = self:channels()}
+	local ret = SD{len = math.max(self:length(), other:length()), rate = self:samplerate(), ch = self:channels()}
 	return ret:map(function(i,c)
 		local a = i < self:samplecount() and self:get(i,c) or 0
 		local b = i < other:samplecount() and other:get(i,c) or 0
@@ -66,7 +66,7 @@ function SD_meta:__mul(other)
 	assert(self:samplerate() == other:samplerate(), "Sample rate does not match")
 	assert(self:channels() == other:channels(), "Cannel count does not match")
 
-	local ret = SD{len = math.max(self:length(), other:length()), rate = self:samplerate(), channels = self:channels()}
+	local ret = SD{len = math.max(self:length(), other:length()), rate = self:samplerate(), ch = self:channels()}
 	return ret:map(function(i,c)
 		local a = i < self:samplecount() and self:get(i,c) or 1
 		local b = i < other:samplecount() and other:get(i,c) or 1
@@ -78,7 +78,7 @@ function SD_meta:append(other)
 	assert(self:samplerate() == other:samplerate(), "Sample rate does not match")
 	assert(self:channels() == other:channels(), "Cannel count does not match")
 
-	local ret = SD{len = self:length() + other:length(), rate = self:samplerate(), channels = self:channels()}
+	local ret = SD{len = self:length() + other:length(), rate = self:samplerate(), ch = self:channels()}
 	return ret:map(function(i,c)
 		if i < self:samplecount() then
 			return self:get(i,c)
@@ -94,7 +94,7 @@ function SD_meta:sub(starttime, endtime)
 	local endidx = self:to_index(endtime)
 	assert(endtime - starttime > 0 and startidx >= 0 and endidx <= self:samplecount(),
 		string.format("interval [%f:%f] out of bounds", starttime, endtime))
-	local ret = SD{len = endtime - starttime, rate = self:samplerate(), chanels = self:channels()}
+	local ret = SD{len = endtime - starttime, rate = self:samplerate(), ch = self:channels()}
 	return ret:map(function(i,c) return self:get(i + startidx, c) end)
 end
 
@@ -130,7 +130,7 @@ end
 
 -- converters
 function SD_meta:to_sample_rate(rate)
-	local ret = SD{len = self:length(), rate = rate, channels = self:channels()}
+	local ret = SD{len = self:length(), rate = rate, ch = self:channels()}
 	local scaleFactor = self:samplerate() / rate
 	ret:map(function(i,c) return self:get(i * scaleFactor, c) end)
 	return ret
