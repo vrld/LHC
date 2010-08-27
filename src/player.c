@@ -32,7 +32,12 @@
 #include <portaudio.h>
 
 #include "player.h"
-#include "pa_assert.h"
+
+#define PA_ASSERT_CMD(cmd) do { PaError err; \
+    if (paNoError != (err = (cmd))) { \
+        fprintf(stderr, "PortAudio error (%s): %s\n", #cmd, Pa_GetErrorText(err)); \
+        exit(EXIT_FAILURE); \
+    } } while(0)
 
 static int pa_play_callback(const void *inputBuffer, void* outputBuffer,
 		unsigned long framesPerBuffer,
@@ -49,14 +54,17 @@ static int pa_play_callback(const void *inputBuffer, void* outputBuffer,
 
 	size_t i;
 	int c;
+	float *sample = pi->data->samples + pi->pos * pi->data->channels;
 	for (i = 0; i < framesPerBuffer; ++i) {
-		if (pi->pos >= pi->data->sample_count)
+		if (pi->pos >= pi->data->sample_count) {
 			pi->pos = pi->looping ? 0 : pi->data->sample_count - 1;
+			sample = pi->data->samples + pi->pos * pi->data->channels;
+		}
 
 		/* multichannel output: samples are interleaved, e.g. stereo:
 		 * c1,1|c2,1|c1,2|c2,2|... */
 		for (c = 1; c <= pi->data->channels; ++c)
-			*out++ = pi->data->samples[pi->pos * pi->data->channels + c - 1];
+			*out++ = *sample++;
 		pi->pos++;
 	}
 
@@ -84,6 +92,7 @@ int l_player_start(lua_State* L)
 	PA_ASSERT_CMD( Pa_StartStream(pi->stream) );
 
 	/* return player */
+	lua_settop(L,1);
 	return 1;
 }
 
@@ -95,21 +104,20 @@ int l_player_stop(lua_State *L)
 	}
 
 	/* return player */
+	lua_settop(L,1);
 	return 1;
 }
 
-int l_player_set_loop(lua_State* L)
+int l_player_looping(lua_State* L)
 {
 	PlayerInfo* pi = l_player_checkplayer(L, 1);
-	pi->looping = lua_toboolean(L, 2);
 
-	/* return player */
-	return 1;
-}
+	if (lua_isboolean(L, 2)) {
+		pi->looping = lua_toboolean(L, 2);
+		lua_settop(L,1);
+		return 1;
+	}
 
-int l_player_is_looping(lua_State* L)
-{
-	PlayerInfo* pi = l_player_checkplayer(L, 1);
 	lua_pushboolean(L, pi->looping);
 	return 1;
 }
@@ -129,6 +137,19 @@ int l_player_gc(lua_State* L)
 	/* TODO: unmutex here? */
 
 	return 0;
+}
+
+int l_player_tostring(lua_State* L)
+{
+	PlayerInfo* pi = l_player_checkplayer(L, 1);
+	lua_pushstring(L, "player{pos = ");
+	lua_pushnumber(L, (double)pi->pos / pi->data->rate);
+	if (pi->looping)
+		lua_pushstring(L, " (looping)}");
+	else
+		lua_pushstring(L, "}");
+	lua_concat(L, 3);
+	return 1;
 }
 
 #define SETFUNCTION(L, idx, name, func) \
@@ -152,9 +173,9 @@ int l_player_new(lua_State* L)
 	if (luaL_newmetatable(L, "lhc.PlayerInfo")) {
 		SETFUNCTION(L, -1, "play", l_player_start);
 		SETFUNCTION(L, -1, "stop", l_player_stop);
-		SETFUNCTION(L, -1, "set_loop", l_player_set_loop);
-		SETFUNCTION(L, -1, "is_looping", l_player_is_looping);
+		SETFUNCTION(L, -1, "looping", l_player_looping);
 		SETFUNCTION(L, -1, "__gc", l_player_gc);
+		SETFUNCTION(L, -1, "__tostring", l_player_tostring);
 		lua_pushvalue(L, -1);
 		lua_setfield(L, -2, "__index");
 	}

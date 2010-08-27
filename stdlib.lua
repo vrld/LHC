@@ -162,7 +162,7 @@ end
 
 function SD_meta:loop()
 	local p = Player(self)
-	p:set_loop(true)
+	p:looping(true)
 	p:play()
 	return p
 end
@@ -171,7 +171,7 @@ end
 function SD_meta:dump_to_file(filename)
 	local f = io.open(filename, 'w')
 	self:maptime(function(t,c,v)
-		if c == 1 then 
+		if c == 1 then
 			f:write(string.format("%f    %f", t, v))
 		else
 			f:write(string.format("    %f", v))

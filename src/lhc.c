@@ -32,7 +32,6 @@
 #include <stdlib.h>
 #include <portaudio.h>
 
-#include "pa_assert.h"
 #include "commandline.h"
 #include "sounddata.h"
 #include "player.h"
@@ -51,22 +50,31 @@ int main()
 	lua_cpcall(L, luaopen_player, NULL);
 	(void)luaL_dofile(L, "stdlib.lua");
 
-	PA_ASSERT_CMD(Pa_Initialize());
+	PaError pa_error = Pa_Initialize();
+	if (pa_error != paNoError) {
+		fprintf(stderr, "Cannot initialize PortAudio: %s\n", Pa_GetErrorText(pa_error));
+		return -1;
+	}
+
 	/* run commandline */
 	while (get_command(L))
 	{
 		error = luaL_loadbuffer(L, lua_tostring(L, 1), lua_strlen(L, 1), "input");
 		if (error) {
-			fprintf(stderr, "cannot load input: %s\n", lua_tostring(L, -1));
+			fprintf(stderr, "syntax-error: %s\n", lua_tostring(L, -1));
 			continue;
 		}
 		error = lua_pcall(L, 0,0,0);
 		if (error)
-			fprintf(stderr, "cannot run input: %s\n", lua_tostring(L, -1));
+			fprintf(stderr, "error: %s\n", lua_tostring(L, -1));
 	}
 
 	lua_close(L);
-	PA_ASSERT_CMD(Pa_Terminate());
+	pa_error = Pa_Terminate();
+	if (pa_error != paNoError) {
+		fprintf(stderr, "Cannot terminate PortAudio: %s\n", Pa_GetErrorText(pa_error));
+		return -1;
+	}
 
 	return 0;
 }
