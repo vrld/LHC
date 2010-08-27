@@ -38,7 +38,11 @@ function SD_meta:__add(other)
 	assert(self:channels() == other:channels(), "Cannel count does not match")
 
 	local ret = SD{len = math.max(self:length(), other:length()), rate = self:samplerate(), channels = self:channels()}
-	return ret:map(function(i,c) return self:get(i,c) + other:get(i,c) end)
+	return ret:map(function(i,c)
+		local a = i < self:samplecount() and self:get(i,c) or 0
+		local b = i < other:samplecount() and other:get(i,c) or 0
+		return a + b
+	end)
 end
 
 function SD_meta:__sub(other)
@@ -46,7 +50,11 @@ function SD_meta:__sub(other)
 	assert(self:channels() == other:channels(), "Cannel count does not match")
 
 	local ret = SD{len = math.max(self:length(), other:length()), rate = self:samplerate(), channels = self:channels()}
-	return ret:map(function(i,c) return self:get(i,c) - other:get(i,c) end)
+	return ret:map(function(i,c)
+		local a = i < self:samplecount() and self:get(i,c) or 0
+		local b = i < other:samplecount() and other:get(i,c) or 0
+		return a - b
+	end)
 end
 
 function SD_meta:__mul(other)
@@ -54,7 +62,11 @@ function SD_meta:__mul(other)
 	assert(self:channels() == other:channels(), "Cannel count does not match")
 
 	local ret = SD{len = math.max(self:length(), other:length()), rate = self:samplerate(), channels = self:channels()}
-	return ret:map(function(i,c) return self:get(i,c) * other:get(i,c) end)
+	return ret:map(function(i,c)
+		local a = i < self:samplecount() and self:get(i,c) or 1
+		local b = i < other:samplecount() and other:get(i,c) or 1
+		return a * b
+	end)
 end
 
 function SD_meta:append(other)
@@ -68,6 +80,17 @@ function SD_meta:append(other)
 		end
 		return other:get(i - self:samplecount(), c)
 	end)
+end
+
+function SD_meta:sub(starttime, endtime)
+	if starttime > endtime then starttime, endtime = endtime, starttime end
+
+	local startidx = self:to_index(starttime)
+	local endidx = self:to_index(endtime)
+	assert(endtime - starttime > 0 and startidx >= 0 and endidx <= self:samplecount(),
+		string.format("interval [%f:%f] out of bounds", starttime, endtime))
+	local ret = SD{len = endtime - starttime, rate = self:samplerate(), chanels = self:channels()}
+	return ret:map(function(i,c) return self:get(i + startidx, c) end)
 end
 
 -- generators
