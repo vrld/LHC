@@ -68,7 +68,7 @@ static int pa_play_callback(const void *inputBuffer, void* outputBuffer,
 		pi->pos++;
 	}
 
-	if (pi->pos >= pi->data->sample_count)
+	if (!pi->looping && pi->pos >= pi->data->sample_count)
 		return paComplete;
 
 	return paContinue;
