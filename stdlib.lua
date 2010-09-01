@@ -37,6 +37,12 @@ function SD_meta:clone()
 	return ret:map(function(i,c) return self:get(i,c) end)
 end
 
+function SD_meta:reversed()
+	local ret = SD{len = self:length(), rate = self:samplerate(), ch = self:channels()}
+	local sc = self:samplecount()
+	return ret:map(function(i,c) return self:get(sc - i - 1,c) end)
+end
+
 -- combination
 function SD_meta:__add(other)
 	assert(self:samplerate() == other:samplerate(), "Sample rate does not match")
