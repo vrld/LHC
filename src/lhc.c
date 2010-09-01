@@ -72,7 +72,7 @@ int main()
 		}
 		error = lua_pcall(L, 0,0,0);
 		if (error)
-			fprintf(stderr, "error: %s\n", lua_tostring(L, -1));
+			fprintf(stderr, "%s\n", lua_tostring(L, -1));
 	}
 
 	lua_close(L);
