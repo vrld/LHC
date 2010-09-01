@@ -40,6 +40,7 @@ typedef struct _PlayerInfo
 } PlayerInfo;
 
 PlayerInfo* l_player_checkplayer(lua_State* L, int idx);
+int l_player_seek(lua_State* L);
 int l_player_start(lua_State* L);
 int l_player_loop(lua_State* L);
 int l_player_stop(lua_State *L);

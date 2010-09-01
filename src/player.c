@@ -83,6 +83,21 @@ PlayerInfo* l_player_checkplayer(lua_State* L, int idx)
 	return pi;
 }
 
+int l_player_seek(lua_State* L)
+{
+	PlayerInfo* pi = l_player_checkplayer(L, 1);
+	double t = luaL_checknumber(L, 2);
+
+	size_t pos = t * (double)pi->data->rate;
+	if (pos > pi->data->sample_count)
+		return luaL_error(L, "cannot seek to position %f", t);
+
+	pi->pos = pos;
+
+	lua_settop(L, 1);
+	return 1;
+}
+
 int l_player_start(lua_State* L)
 {
 	l_player_stop(L);
@@ -171,6 +186,7 @@ int l_player_new(lua_State* L)
 				pa_play_callback, pi) );
 
 	if (luaL_newmetatable(L, "lhc.PlayerInfo")) {
+		SETFUNCTION(L, -1, "seek", l_player_seek);
 		SETFUNCTION(L, -1, "play", l_player_start);
 		SETFUNCTION(L, -1, "stop", l_player_stop);
 		SETFUNCTION(L, -1, "looping", l_player_looping);
