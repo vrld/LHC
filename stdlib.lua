@@ -138,13 +138,12 @@ end
 
 function SD_meta:quantized(quants)
 	local quants = quants / 2
-	self:clone():map(function(i,_,v)
+	return self:clone():map(function(i,_,v)
 		if v > 0 then
 			return math.ceil(v * quants) / quants
 		end
 		return math.floor(v * quants) / quants
 	end)
-	return self
 end
 
 function SD_meta:compressed()
