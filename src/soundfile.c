@@ -37,12 +37,12 @@
 int l_readFile(lua_State* L)
 {
 	/* open file and get info */
-	const char* filename = luaL_checkstring(L, 1);
+	const char* path = luaL_checkstring(L, 1);
 	SF_INFO info;
 	info.format = 0;
-	SNDFILE *file = sf_open(filename, SFM_READ, &info);
+	SNDFILE *file = sf_open(path, SFM_READ, &info);
 	if (file == NULL)
-		return luaL_error(L, "cannot open file '%s' (format may not be supported)", filename);
+		return luaL_error(L, "cannot open file '%s' (format may not be supported)", path);
 
 	/* create new sounddata object based on info */
 	lua_createtable(L, 0, 3);
@@ -70,12 +70,56 @@ int l_readFile(lua_State* L)
 
 int l_writeFile(lua_State* L)
 {
-	return luaL_error(L, "not yet implemented");
+	/* TODO: remove bugs */
+	SoundData* sd = l_sounddata_checksounddata(L, 1);
+	const char* path = luaL_checkstring(L, 2);
+	int bits = luaL_optint(L, 3, 16);
+
+	/* get file extension to extract type */
+	lua_getglobal(L, "__get_filetype_from_extension");
+	lua_pushvalue(L, 2);
+	lua_call(L, 1, 1);
+	int fmt = lua_tointeger(L, -1);
+	switch (bits) {
+		case -2: fmt |= SF_FORMAT_DOUBLE; break;
+		case -1: fmt |= SF_FORMAT_FLOAT; break;
+		case  8: fmt |= SF_FORMAT_PCM_S8; break;
+		case 16: fmt |= SF_FORMAT_PCM_16; break;
+		case 24: fmt |= SF_FORMAT_PCM_24; break;
+		case 32: fmt |= SF_FORMAT_PCM_32; break;
+		default: return luaL_error(L, "invalid bitsize");
+	}
+
+	SF_INFO info = {0,0,0,0,0,0};
+	info.channels = sd->channels;
+	info.samplerate = sd->rate;
+	info.format = fmt;
+
+	SNDFILE *file = sf_open(path, SFM_WRITE, &info);
+	sf_count_t count = sf_write_float(file, sd->samples, sd->sample_count * sd->channels);
+	sf_close(file);
+	if (count != (sf_count_t)(sd->sample_count * sd->channels))
+		return luaL_error(L, "did not write correct amount of samples (%d requested, %d written)",
+				sd->sample_count * sd->channels, count);
+
+	lua_settop(L, 1);
+	return 1;
 }
 
+#define l_setfield_int(L, idx, name, val) \
+	lua_pushinteger((L), (val)); \
+	lua_setfield((L), (idx)-1, (name))
 int luaopen_soundfile(lua_State* L)
 {
-	lua_register(L, "readFile", l_readFile);
-	lua_register(L, "writeFile", l_writeFile);
+	lua_createtable(L, 0, 4);
+	l_setfield_int(L, -1, "wav",  SF_FORMAT_WAV);
+	l_setfield_int(L, -1, "raw",  SF_FORMAT_RAW);
+	l_setfield_int(L, -1, "flac", SF_FORMAT_FLAC);
+	l_setfield_int(L, -1, "ogg",  SF_FORMAT_OGG);
+	lua_setfield(L, LUA_GLOBALSINDEX, "__file_format_ids");
+
+	lua_register(L, "read_file", l_readFile);
+	lua_register(L, "write_file", l_writeFile);
+
 	return 0;
 }
