@@ -90,8 +90,10 @@ int l_sounddata_gc(lua_State* L)
 	SoundData* data = l_sounddata_checksounddata(L, 1);
 	/* TODO: mutex here */
 	data->refcount--;
-	if (data->refcount <= 0)
+	if (data->refcount <= 0) {
 		free(data->samples);
+		data->samples = NULL;
+	}
 	/* TODO: unmutex here */
 	return 0;
 }
@@ -177,29 +179,6 @@ int l_sounddata_map(lua_State* L)
 	lua_pushcfunction((L), (func)); \
 	lua_setfield((L), (idx)-1, (name))
 
-static void l_sounddata_push_metatable(lua_State* L)
-{
-	/* maybe create metatable */
-	if (luaL_newmetatable(L, "lhc.SoundData")) {
-		SETFUNCTION(L, -1, "samplerate", l_sounddata_samplerate);
-		SETFUNCTION(L, -1, "length", l_sounddata_length);
-		SETFUNCTION(L, -1, "channels", l_sounddata_channels);
-		SETFUNCTION(L, -1, "samplecount", l_sounddata_samplecount);
-
-		SETFUNCTION(L, -1, "to_index", l_sounddata_to_index);
-		SETFUNCTION(L, -1, "to_time", l_sounddata_to_time);
-
-		SETFUNCTION(L, -1, "set", l_sounddata_set);
-		SETFUNCTION(L, -1, "get", l_sounddata_get);
-		SETFUNCTION(L, -1, "map", l_sounddata_map);
-
-		SETFUNCTION(L, -1, "__gc", l_sounddata_gc);
-		SETFUNCTION(L, -1, "__tostring", l_sounddata_tostring);
-		lua_pushvalue(L, -1);
-		lua_setfield(L, -2, "__index");
-	}
-}
-
 #define GETFIELD_OPT(L, idx, name1, name2) \
 	lua_getfield(L, idx, name1); \
 	if (lua_isnil(L, -1)) { \
@@ -241,7 +220,7 @@ int l_sounddata_new(lua_State* L)
 	for (i = 0; i < data->sample_count * channels; ++i)
 		data->samples[i] = .0;
 
-	l_sounddata_push_metatable(L);
+	luaL_getmetatable(L, "lhc.SoundData");
 	lua_setmetatable(L, -2);
 
 	return 1;
@@ -251,5 +230,24 @@ int luaopen_sounddata(lua_State* L)
 {
 	lua_register(L, "SoundData", l_sounddata_new);
 	lua_register(L, "SD", l_sounddata_new);
+
+	if (luaL_newmetatable(L, "lhc.SoundData")) {
+		SETFUNCTION(L, -1, "samplerate", l_sounddata_samplerate);
+		SETFUNCTION(L, -1, "length", l_sounddata_length);
+		SETFUNCTION(L, -1, "channels", l_sounddata_channels);
+		SETFUNCTION(L, -1, "samplecount", l_sounddata_samplecount);
+
+		SETFUNCTION(L, -1, "to_index", l_sounddata_to_index);
+		SETFUNCTION(L, -1, "to_time", l_sounddata_to_time);
+
+		SETFUNCTION(L, -1, "set", l_sounddata_set);
+		SETFUNCTION(L, -1, "get", l_sounddata_get);
+		SETFUNCTION(L, -1, "map", l_sounddata_map);
+
+		SETFUNCTION(L, -1, "__gc", l_sounddata_gc);
+		SETFUNCTION(L, -1, "__tostring", l_sounddata_tostring);
+		lua_pushvalue(L, -1);
+		lua_setfield(L, -2, "__index");
+	}
 	return 0;
 }
