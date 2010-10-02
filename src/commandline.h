@@ -2,7 +2,6 @@
 #define COMMANDLINE_H
 
 #include "config.h"
-#define LHC_CMDLINE_INPUT_BUFFER_SIZE 512
 
 #ifdef WITH_GNU_READLINE
 
