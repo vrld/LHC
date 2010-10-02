@@ -12,6 +12,7 @@ endif (CMAKE_COMPILER_IS_GNUCC)
 set(ALL_FOUND TRUE)
 
 option(WITH_GNU_READLINE "Use GNU readline for input" ON)
+set(LHC_CMDLINE_INPUT_BUFFER_SIZE 512 CACHE NUMBER "Size of input buffer")
 
 # PortAudio
 find_library(PA_LIBRARY NAMES portaudio)
@@ -88,6 +89,7 @@ if (ALL_FOUND)
 		lhc.c
 		sounddata.c
 		soundfile.c
+		spectrum.c
 		player.c
 		)
 	add_executable(lhc ${SRCS})
