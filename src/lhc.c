@@ -35,6 +35,7 @@
 #include "commandline.h"
 #include "sounddata.h"
 #include "soundfile.h"
+#include "spectrum.h"
 #include "player.h"
 
 static int get_command(lua_State* L);
@@ -49,12 +50,18 @@ int main()
 	luaL_openlibs(L);
 	lua_cpcall(L, luaopen_sounddata, NULL);
 	lua_cpcall(L, luaopen_soundfile, NULL);
+	lua_cpcall(L, luaopen_spectrum, NULL);
 	lua_cpcall(L, luaopen_player, NULL);
+
+	luaL_getmetatable(L, "lhc.SoundData");
+	lua_setglobal(L, "SD_meta");
 	error = luaL_dofile(L, "stdlib.lua");
 	if (error) {
 		fprintf(stderr, "error opening stdlib: %s\n", lua_tostring(L, -1));
 		return -1;
 	}
+	lua_pushnil(L);
+	lua_setglobal(L, "SD_meta");
 
 	PaError pa_error = Pa_Initialize();
 	if (pa_error != paNoError) {
@@ -119,8 +126,6 @@ static int get_command(lua_State* L)
 		if (strstr(input, "exit") == input)
 			return 0;
 
-		save_line(input);
-
 		/* multiline input -- take a look at the original lua interpreter */
 		lua_pushstring(L, input);
 		if (lua_gettop(L) > 1)
@@ -131,8 +136,10 @@ static int get_command(lua_State* L)
 		}
 
 		prompt = prompt2;
-		if (!incomplete(L))
+		if (!incomplete(L)) {
+			save_line( lua_tostring(L, -1) );
 			return 1;
+		}
 	}
 	return 0;
 }
