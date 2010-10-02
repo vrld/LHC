@@ -1,3 +1,13 @@
+function __get_filetype_from_extension(file)
+	local ext = file:match("\.([^\.]+)$")
+	return __file_format_ids[ext] or error("cannot retrieve filetype of '"..file.."'")
+end
+
+function math.sinc(x)
+	local t = math.pi * x
+	return math.sin(t)/t
+end
+
 osc = {}
 function osc.rect(t, f) if (f*t) % 1 < .5 then return -1 end return 1 end
 function osc.saw(t, f) local ft = (f*t - .5) % 1 return 2 * ft - 1 end
@@ -25,8 +35,6 @@ function env.risefall(risetime, plateautime, falltime)
 end
 
 -- additional helpers for SoundData objects
-local SD_meta = getmetatable(SD{})
-
 -- basic helpers
 function SD_meta:maptime(func)
 	return self:map(function(i,c,v) return func(i / self:samplerate(), c, v) end)
@@ -182,6 +190,13 @@ function SD_meta:loop()
 	return p
 end
 
+-- shortcut to write_file
+function SD_meta:write(path, fmt)
+	local fmttable = {double = -2, float = -1, pcm8 = 8, pcm16 = 16, pcm24 = 24, pcm32 = 32}
+	return write_file(self, path, fmttable[fmt] or fmt)
+end
+SD_meta.save = SD_meta.write
+
 -- useful for gnuplot output
 function SD_meta:dump_to_file(filename)
 	local f = io.open(filename, 'w')
@@ -194,4 +209,31 @@ function SD_meta:dump_to_file(filename)
 		if c == self:channels() then f:write("\n") end
 		return v
 	end)
+end
+
+-- window functions
+window = {}
+function window.hann(x)
+	return .5 * (1 - math.cos(2 * math.pi * x))
+end
+
+function window.hamming(x)
+	return .54 - .46 * math.cos(2 * math.pi * x)
+end
+
+function window.tuckey(x)
+	return sin(math.pi * x)
+end
+
+function window.sinc(x)
+	return math.sinc(2 * x - 1)
+end
+
+function window.bartlett(x)
+	return 2 * (.5 - math.abs(x - .5))
+end
+
+function window.blackman(x)
+	local alpha = .16
+	return (1 - alpha)/2 - .5 * math.cos(2*math.pi*x) + alpha/2 * math.cos(4*math.pi*x)
 end
