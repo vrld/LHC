@@ -2,9 +2,11 @@
 Lua 5.1
 PortAudio v19
 
+Probably doesn't work with LuaJIT.
+
 === Build instructions ===
 
-Edit Makefile.
+Edit src/config.h.
 Run make.
 ???
 Profit.
@@ -46,6 +48,8 @@ callback(out, frames, pos, rate, channels)
       channels  ... Number of channels. With more than one channel, samples need
                     to be written interleaved, i.e. with channels = 2:
                     out[1] = sample[1].left, out[2] = sample[1].right, out[3] = sample[2].left, ...
+
+The callback may contain upvalues, but has to be a Lua function (not a C-function).
 
 === License ===
 Copyright (c) 2011 Matthias Richter
