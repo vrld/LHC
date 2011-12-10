@@ -25,6 +25,22 @@ Lua 5.1.4  Copyright (C) 1994-2008 Lua.org, PUC-Rio
 >> end
 > p = player.new(sine(440), 44100, 1, 1024)
 > p:play()
+> p:stop()
+>
+> soundfile = require 'soundfile'
+> out = {}
+> sine(440)(out, 44100, 0, 44100)
+> soundfile.write('sine.wav', out, 44100, 1, 16)
+> print(soundfile.info('test.wav')
+44100	44100	1	Microsoft WAV
+> function stream(path)
+>     local inp = soundfile.read('test.wav')
+>     return function(out, frames, pos)
+>         for i = 1,frames do out[i] = inp[pos+i] or 0 end
+>     end
+> end
+> p = player.new(stream('test.wav'))
+> p:play()
 
 === API ===
 
