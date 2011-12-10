@@ -1,198 +1,229 @@
-/*********************************************************************
- *  This file is part of LHC
- *
- *  Copyright (c) 2010 Matthias Richter
- * 
- *  Permission is hereby granted, free of charge, to any person
- *  obtaining a copy of this software and associated documentation
- *  files (the "Software"), to deal in the Software without
- *  restriction, including without limitation the rights to use,
- *  copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the
- *  Software is furnished to do so, subject to the following
- *  conditions:
- * 
- *  The above copyright notice and this permission notice shall be
- *  included in all copies or substantial portions of the Software.
- * 
- *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- *  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
- *  OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- *  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
- *  HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
- *  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- *  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
- *  OTHER DEALINGS IN THE SOFTWARE.
- */
-#include <string.h>
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
-#include <stdlib.h>
 #include <portaudio.h>
 
-#include "player.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
 
-#define PA_ASSERT_CMD(cmd) do { PaError err; \
-    if (paNoError != (err = (cmd))) { \
-        fprintf(stderr, "PortAudio error (%s): %s\n", #cmd, Pa_GetErrorText(err)); \
-        exit(EXIT_FAILURE); \
-    } } while(0)
+#include "config.h"
+#include "inter_stack_tools.h"
 
-static int pa_play_callback(const void *inputBuffer, void* outputBuffer,
-		unsigned long framesPerBuffer,
-		const PaStreamCallbackTimeInfo* timeinfo,
-		PaStreamCallbackFlags statusFlags,
-		void *userdata)
+struct PlayerInfo
+{
+	int channels;
+	int pos;
+	double samplerate;
+	PaStream *stream;
+	lua_State* L;
+};
+typedef struct PlayerInfo PlayerInfo;
+
+static int l_panic(lua_State* L)
+{
+	lua_Debug ar;
+	lua_getstack(L, 1, &ar);
+	fprintf(stderr, "Error in callback function (%s) at line %d:\n%s", ar.source, ar.currentline, lua_tostring(L, -1));
+	return 0;
+}
+
+static int pa_stream_callback(const void* inputBuffer, void* outputBuffer,
+		unsigned long frames, const PaStreamCallbackTimeInfo* timeinfo,
+		PaStreamCallbackFlags status, void* udata)
 {
 	(void)inputBuffer;
 	(void)timeinfo;
-	(void)statusFlags;
+	(void)status;
 
-	PlayerInfo* pi = (PlayerInfo*)(userdata);
-	float *out = (float*)outputBuffer;
+	float* out = (float*)outputBuffer;
+	PlayerInfo* pi = (PlayerInfo*)udata;
+	lua_State* L = pi->L;
 
-	size_t i;
-	int c;
-	float *sample = pi->data->samples + pi->pos * pi->data->channels;
-	for (i = 0; i < framesPerBuffer; ++i) {
-		if (pi->pos >= pi->data->sample_count) {
-			pi->pos = pi->looping ? 0 : pi->data->sample_count - 1;
-			sample = pi->data->samples + pi->pos * pi->data->channels;
-		}
+	/* function callback(out, nsamples, pos, channels, rate) */
+	lua_pushvalue(L, 1);
+	lua_pushvalue(L, 2);
+	lua_pushnumber(L, frames);
+	lua_pushnumber(L, pi->pos);
+	lua_pushnumber(L, pi->channels);
+	lua_pushnumber(L, pi->samplerate);
 
-		/* multichannel output: samples are interleaved, e.g. stereo:
-		 * c1,1|c2,1|c1,2|c2,2|... */
-		for (c = 1; c <= pi->data->channels; ++c)
-			*out++ = *sample++;
-		pi->pos++;
+	if (0 != lua_pcall(L, 5, 0, 0)) {
+		fprintf(stderr, "Error calling function: %s\n", lua_tostring(L, -1));
+		return paAbort;
 	}
 
-	if (!pi->looping && pi->pos >= pi->data->sample_count)
-		return paComplete;
+	/* fill buffer */
+	for (size_t i = 1; i <= frames*pi->channels; ++i, ++out) {
+		lua_rawgeti(L, 2, i);
+		*out = lua_tonumber(L, -1);
+		if (i % (LUA_MINSTACK - 2)) lua_settop(L, 2);
+	}
+
+	/* reset stack */
+	lua_settop(L, 2);
+
+	pi->pos += frames;
 
 	return paContinue;
 }
 
-PlayerInfo* l_player_checkplayer(lua_State* L, int idx)
-{
-	PlayerInfo* pi = (PlayerInfo*)luaL_checkudata(L, idx, "lhc.PlayerInfo");
-	if (pi == NULL)
-		luaL_typerror(L, idx, "Player");
 
+PlayerInfo* l_checkplayer(lua_State* L, int idx)
+{
+	PlayerInfo* pi = (PlayerInfo*)luaL_checkudata(L, idx, "lhc.player.player");
+	if (NULL == pi)
+		luaL_typerror(L, idx, "Player");
 	return pi;
 }
 
-int l_player_seek(lua_State* L)
+static int l_player_play(lua_State* L)
 {
-	PlayerInfo* pi = l_player_checkplayer(L, 1);
-	double t = luaL_checknumber(L, 2);
+	PlayerInfo* pi = l_checkplayer(L, 1);
+	if (NULL == pi->stream)
+		return luaL_error(L, "Stream not properly initialized.");
 
-	size_t pos = t * (double)pi->data->rate;
-	if (pos > pi->data->sample_count)
-		return luaL_error(L, "cannot seek to position %f", t);
-
-	pi->pos = pos;
-
-	lua_settop(L, 1);
-	return 1;
-}
-
-int l_player_start(lua_State* L)
-{
-	l_player_stop(L);
-
-	PlayerInfo* pi = l_player_checkplayer(L, 1);
-	pi->pos = 0;
-	PA_ASSERT_CMD( Pa_StartStream(pi->stream) );
-
-	/* return player */
-	lua_settop(L,1);
-	return 1;
-}
-
-int l_player_stop(lua_State *L)
-{
-	PlayerInfo* pi = l_player_checkplayer(L, 1);
-	if (Pa_IsStreamStopped(pi->stream) == 0) {
-		PA_ASSERT_CMD( Pa_StopStream(pi->stream) );
-	}
-
-	/* return player */
-	lua_settop(L,1);
-	return 1;
-}
-
-int l_player_looping(lua_State* L)
-{
-	PlayerInfo* pi = l_player_checkplayer(L, 1);
-
-	if (lua_isboolean(L, 2)) {
-		pi->looping = lua_toboolean(L, 2);
-		lua_settop(L,1);
-		return 1;
-	}
-
-	lua_pushboolean(L, pi->looping);
-	return 1;
-}
-
-int l_player_gc(lua_State* L)
-{
-	l_player_stop(L);
-
-	PlayerInfo* pi = l_player_checkplayer(L, 1);
-	PA_ASSERT_CMD(Pa_CloseStream(pi->stream));
-
-	/* possibly free associated sounddata  */
-	/* TODO: mutex here? */
-	pi->data->refcount--;
-	if (pi->data->refcount <= 0)
-		free(pi->data->samples);
-	/* TODO: unmutex here? */
+	PaError err = Pa_StartStream(pi->stream);
+	if (err != paNoError)
+		return luaL_error(L, "Cannot play stream: %s", Pa_GetErrorText(err));
 
 	return 0;
 }
 
-int l_player_tostring(lua_State* L)
+static int l_player_stop(lua_State* L)
 {
-	PlayerInfo* pi = l_player_checkplayer(L, 1);
-	lua_pushstring(L, "player{pos = ");
-	lua_pushnumber(L, (double)pi->pos / pi->data->rate);
-	if (pi->looping)
-		lua_pushstring(L, " (looping)}");
-	else
-		lua_pushstring(L, "}");
-	lua_concat(L, 3);
+	PlayerInfo* pi = l_checkplayer(L, 1);
+	if (NULL == pi->stream)
+		return luaL_error(L, "Stream not properly initialized.");
+
+	PaError err = Pa_AbortStream(pi->stream);
+	if (err != paNoError)
+		return luaL_error(L, "Cannot stop stream: %s", Pa_GetErrorText(err));
+
+	return 0;
+}
+
+static int l_player_seek(lua_State* L)
+{
+	PlayerInfo* pi = l_checkplayer(L, 1);
+	int pos = luaL_checkint(L, 2);
+
+	l_player_stop(L);
+	pi->pos = pos;
+	l_player_play(L);
+
+	return 0;
+}
+
+static int l_player_load(lua_State* L)
+{
+	PlayerInfo* pi = l_checkplayer(L, 1);
+	if (NULL == pi->stream)
+		return luaL_error(L, "Stream not properly initialized.");
+	lua_pushnumber(L, Pa_GetStreamCpuLoad(pi->stream));
 	return 1;
 }
 
-#define SETFUNCTION(L, idx, name, func) \
-	lua_pushcfunction((L), (func)); \
-	lua_setfield((L), (idx)-1, (name))
-int l_player_new(lua_State* L)
+static int l_player_gc(lua_State* L)
 {
-	SoundData *data = l_sounddata_checksounddata(L, -1);
-	lua_pop(L,1);
+	PlayerInfo* pi = l_checkplayer(L, 1);
+	if (NULL == pi->stream)
+		return 0;
 
+	PaError err = Pa_CloseStream(pi->stream);
+	if (err != paNoError)
+		fprintf(stderr, "Unable to close player stream: %s\n", Pa_GetErrorText(err));
+
+	lua_close(pi->L);
+
+	return 0;
+}
+
+/* check if user queries struct members. otherwise forward to metatable. */
+static int l_player_index(lua_State* L)
+{
+	PlayerInfo* pi = (PlayerInfo*)lua_touserdata(L, 1);
+	assert(NULL != pi);
+	const char* key = lua_tostring(L, 2);
+
+	if (0 == strcmp("pos", key)) {
+		lua_pushnumber(L, pi->pos);
+	} else if (0 == strcmp("samplerate", key)) {
+		lua_pushnumber(L, pi->samplerate);
+	} else if (0 == strcmp("time", key)) {
+		lua_pushnumber(L, (double)pi->pos / pi->samplerate);
+	} else {
+		if (0 != lua_getmetatable(L, 1))
+			lua_getfield(L, -1, key);
+		else /* just to be sure */
+			lua_pushnil(L);
+	}
+
+	return 1;
+}
+
+/***
+ * function Player.new(callback, channels, samplerate, buffer_size)
+ * function callback(out, nsamples, pos, channels, rate)
+ *     ... synthesize! ...
+ *     -- postcondition: #out == nSamples
+ * end
+ */
+static int l_player_new(lua_State* L)
+{
+	int    channels    = luaL_optint(L, 2, 2);
+	double samplerate  = luaL_optnumber(L, 3, 44100);
+	size_t size_buffer = luaL_optint(L, 4, DEFAULT_PLAYER_BUFFER_SIZE);
+
+	if (!lua_isfunction(L, 1))
+		return luaL_typerror(L, 1, "function");
+
+	/* create and init new userdata */
 	PlayerInfo* pi = (PlayerInfo*)lua_newuserdata(L, sizeof(PlayerInfo));
-	pi->data = data;
-	pi->data->refcount++;
-	pi->pos = 0;
-	pi->looping = 0;
+	pi->channels   = channels;
+	pi->pos        = 0;
+	pi->samplerate = samplerate;
+	PaError err = Pa_OpenDefaultStream(&(pi->stream), 0, channels, paFloat32,
+			samplerate, size_buffer, pa_stream_callback, pi);
 
-	PA_ASSERT_CMD( Pa_OpenDefaultStream(&pi->stream, 0, pi->data->channels,
-				paFloat32, pi->data->rate, paFramesPerBufferUnspecified,
-				pa_play_callback, pi) );
+	if (err != paNoError) {
+		pi->stream = NULL;
+		return luaL_error(L, "Cannot create player stream: %s\n", Pa_GetErrorText(err));
+	}
 
-	if (luaL_newmetatable(L, "lhc.PlayerInfo")) {
-		SETFUNCTION(L, -1, "seek", l_player_seek);
-		SETFUNCTION(L, -1, "play", l_player_start);
-		SETFUNCTION(L, -1, "stop", l_player_stop);
-		SETFUNCTION(L, -1, "looping", l_player_looping);
-		SETFUNCTION(L, -1, "__gc", l_player_gc);
-		SETFUNCTION(L, -1, "__tostring", l_player_tostring);
-		lua_pushvalue(L, -1);
+	/* push function to the new state */
+	pi->L = luaL_newstate();
+	lua_atpanic(pi->L, &l_panic);
+	luaL_openlibs(pi->L);
+
+	lua_pushvalue(L, 1);
+	l_move_values(L, pi->L, 1);
+
+	lua_createtable(pi->L, size_buffer * channels, 0); /* out */
+	for (size_t i = 1; i <= size_buffer * channels; ++i) {
+		lua_pushnumber(pi->L, .0);
+		lua_rawseti(pi->L, -2, i);
+	}
+
+	/* set metatable for userdata */
+	if (luaL_newmetatable(L, "lhc.player.player")) {
+		lua_pushcfunction(L, &l_player_play);
+		lua_setfield(L, -2, "play");
+
+		lua_pushcfunction(L, &l_player_stop);
+		lua_setfield(L, -2, "stop");
+
+		lua_pushcfunction(L, &l_player_seek);
+		lua_setfield(L, -2, "seek");
+
+		lua_pushcfunction(L, &l_player_load);
+		lua_setfield(L, -2, "cpuload");
+
+		lua_pushcfunction(L, &l_player_gc);
+		lua_setfield(L, -2, "__gc");
+
+		lua_pushcfunction(L, &l_player_index);
 		lua_setfield(L, -2, "__index");
 	}
 	lua_setmetatable(L, -2);
@@ -200,8 +231,35 @@ int l_player_new(lua_State* L)
 	return 1;
 }
 
+
+/* GC-function of the PA cleanup object created in luaopen_player */
+static int l_player_cleanup(lua_State* L)
+{
+	(void)L;
+	PaError err = Pa_Terminate();
+	if (paNoError != err)
+		fprintf(stderr, "Unable to properly terminate PortAudio: %s\n", Pa_GetErrorText(err));
+	return 0;
+}
+
 int luaopen_player(lua_State* L)
 {
-	lua_register(L, "Player", l_player_new);
-	return 0;
+	PaError err = Pa_Initialize();
+	if (paNoError != err)
+		return luaL_error(L, "Cannot open PortAudio: %s\n", Pa_GetErrorText(err));
+
+	/* create dummy object that shuts down PA upon destroy */
+	lua_newuserdata(L, 0);
+	luaL_newmetatable(L, "lhc.player.cleanup");
+	lua_pushcfunction(L, &l_player_cleanup);
+	lua_setfield(L, -2, "__gc");
+	lua_setmetatable(L, -2);
+	lua_setfield(L, LUA_REGISTRYINDEX, "lhc.player.cleanup.object");
+
+	/* the module */
+	lua_createtable(L, 0, 1);
+	lua_pushcfunction(L, &l_player_new);
+	lua_setfield(L, -2, "new");
+
+	return 1;
 }
