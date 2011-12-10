@@ -3,23 +3,25 @@
 #include <string.h>
 #include <assert.h>
 
-#define COPY_TYPE(type, from, to, i)             \
-	switch (type) {                              \
-		case LUA_TNIL:                           \
-			l_copy_nil(from, to, i); break;      \
-		case LUA_TBOOLEAN:                       \
-			l_copy_boolean(from, to, i); break;  \
-		case LUA_TNUMBER:                        \
-			l_copy_number(from, to, i); break;   \
-		case LUA_TSTRING:                        \
-			l_copy_string(from, to, i); break;   \
-		case LUA_TTABLE:                         \
-			l_copy_table(from, to, i); break;    \
-		case LUA_TFUNCTION:                      \
-			l_copy_function(from, to, i); break; \
-		default:                                 \
-			luaL_error(from, "Cannot copy `%s' at index %d", lua_typename(from, type), i); \
+static inline void copy_type(int type, lua_State* from, lua_State* to, int i)
+{
+	switch (type) {
+		case LUA_TNIL:
+			l_copy_nil(from, to, i); break;
+		case LUA_TBOOLEAN:
+			l_copy_boolean(from, to, i); break;
+		case LUA_TNUMBER:
+			l_copy_number(from, to, i); break;
+		case LUA_TSTRING:
+			l_copy_string(from, to, i); break;
+		case LUA_TTABLE:
+			l_copy_table(from, to, i); break;
+		case LUA_TFUNCTION:
+			l_copy_function(from, to, i); break;
+		default:
+			luaL_error(from, "Cannot copy `%s' at index %d", lua_typename(from, type), i);
 	}
+}
 
 int string_writer(lua_State* L, const void* b, size_t size, void* ud)
 {
@@ -93,7 +95,7 @@ void l_copy_table(lua_State* from, lua_State* to, int i)
 	while (lua_next(from, i) != 0) {
 		/* copy key, then value */
 		for (int i = -2; i <= -1; ++i)
-			COPY_TYPE(lua_type(from, i), from, to, i);
+			copy_type(lua_type(from, i), from, to, i);
 
 		lua_rawset(to, -3);
 		lua_pop(from, 1);
@@ -156,7 +158,7 @@ void l_copy_function(lua_State* from, lua_State* to, int i)
 		if (lua_equal(from, i, -1)) /* upvalue to itself */
 			lua_pushvalue(to, -1);
 		else
-			COPY_TYPE(lua_type(from, lua_gettop(from)), from, to, lua_gettop(from));
+			copy_type(lua_type(from, lua_gettop(from)), from, to, lua_gettop(from));
 		lua_pop(from, 1);
 		if (NULL == lua_setupvalue(to, -2, upidx)) /* shouldn't really happen */
 			luaL_error(from, "Cannot copy upvalue (%s)", name);
@@ -191,7 +193,7 @@ void l_copy_values(lua_State* from, lua_State* to, int n)
 	lua_setfield(to, LUA_REGISTRYINDEX, "l-copy-values-visited");
 
 	for (int i = top_from - n + 1; i <= top_from; ++i)
-		COPY_TYPE(lua_type(from, i), from, to, i);
+		copy_type(lua_type(from, i), from, to, i);
 
 	/* clear lookup-table  */
 	lua_pushnil(to);
@@ -202,5 +204,3 @@ void l_copy_values(lua_State* from, lua_State* to, int n)
 	assert(lua_gettop(to) == top_to + n);
 #endif
 }
-
-#undef COPY_TYPE

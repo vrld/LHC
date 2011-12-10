@@ -41,13 +41,13 @@ static int pa_stream_callback(const void* inputBuffer, void* outputBuffer,
 	PlayerInfo* pi = (PlayerInfo*)udata;
 	lua_State* L = pi->L;
 
-	/* function callback(out, nsamples, pos, channels, rate) */
+	/* function callback(out, nsamples, pos, rate, channels) */
 	lua_pushvalue(L, 1);
 	lua_pushvalue(L, 2);
 	lua_pushnumber(L, frames);
 	lua_pushnumber(L, pi->pos);
-	lua_pushnumber(L, pi->channels);
 	lua_pushnumber(L, pi->samplerate);
+	lua_pushnumber(L, pi->channels);
 
 	if (0 != lua_pcall(L, 5, 0, 0)) {
 		fprintf(stderr, "Error calling function: %s\n", lua_tostring(L, -1));
@@ -164,16 +164,16 @@ static int l_player_index(lua_State* L)
 }
 
 /***
- * function Player.new(callback, channels, samplerate, buffer_size)
- * function callback(out, nsamples, pos, channels, rate)
+ * function Player.new(callback, samplerate, channels, buffer_size)
+ * function callback(out, nsamples, pos, rate, channels)
  *     ... synthesize! ...
  *     -- postcondition: #out == nSamples
  * end
  */
 static int l_player_new(lua_State* L)
 {
-	int    channels    = luaL_optint(L, 2, 2);
-	double samplerate  = luaL_optnumber(L, 3, 44100);
+	double samplerate  = luaL_optnumber(L, 2, 44100);
+	int    channels    = luaL_optint(L, 3, 1);
 	size_t size_buffer = luaL_optint(L, 4, DEFAULT_PLAYER_BUFFER_SIZE);
 
 	if (!lua_isfunction(L, 1))

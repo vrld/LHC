@@ -1,37 +1,54 @@
 === Nedded ===
 Lua 5.1
 PortAudio v19
-FFTW
-libsndfile (http://www.mega-nerd.com/libsndfile/)
-GNU Readline (optional, but recommended)
-CMake >= 2.6
 
 === Build instructions ===
 
-Linux:
-    $ mkdir build
-    $ cd build
-    $ ccmake ..
-    Press c
-    Edit options (if you want/have to)
-    Press c again
-    Press g to generate Makefile
-    $ make
-
-OSX (not tested or even known):
-    Probably the same as on Linux, but there should
-    be a way to create a XCode project.
-
-Windows (not tested):
-    Use CMakeSetup.exe to generate a Makefile.
-    Compile.
+Edit Makefile.
+Run make.
+???
+Profit.
 
 === Usage ===
 
-Soon.
+$ lua
+Lua 5.1.4  Copyright (C) 1994-2008 Lua.org, PUC-Rio
+> player = require 'player'
+> function sine(freq)
+>>     return function(out, frames, pos, rate, channels)
+>>         for i = 1,frames do
+>>             out[i] = math.sin( (pos+i-1)/rate * 2 * math.pi * freq )
+>>         end
+>>     end
+>> end
+> p = player.new(sine(440), 44100, 1, 1024)
+> p:play()
+
+=== API ===
+
+player.new(callback, samplerate, channels, buffer_size)
+   Creates a new player object.
+   Default values:
+      samplerate  ... 44100
+      channels    ... 1
+      buffer_size ... 2048
+
+callback(out, frames, pos, rate, channels)
+   Generates samples.
+   Arguments:
+      out       ... Table to write the samples (performance reasons).
+                    Contains the samples from previous run.
+      frames    ... Number of frames to run. One frame consists of the
+                    samples for all channels.
+      pos       ... Starting sample position. E.g. with buffer_size = 1024,
+                    pos = 0 on the first run, pos = 1024 on the second, and so on.
+      rate      ... Samplerate. Get the sample time with pos/rate.
+      channels  ... Number of channels. With more than one channel, samples need
+                    to be written interleaved, i.e. with channels = 2:
+                    out[1] = sample[1].left, out[2] = sample[1].right, out[3] = sample[2].left, ...
 
 === License ===
-Copyright (c) 2010 Matthias Richter
+Copyright (c) 2011 Matthias Richter
 
 Permission is hereby granted, free of charge, to any person
 obtaining a copy of this software and associated documentation
