@@ -1,12 +1,13 @@
 === Nedded ===
 Lua 5.1
-PortAudio v19
+PortAudio v19 for audio output.
+libsndfile for audio IO.
 
 Probably doesn't work with LuaJIT.
 
 === Build instructions ===
 
-Edit src/config.h.
+Edit src/config.h and Makefile.
 Run make.
 ???
 Profit.
