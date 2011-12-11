@@ -10,6 +10,7 @@
 
 #include "config.h"
 #include "inter_stack_tools.h"
+#include "mutex.h"
 
 struct PlayerInfo
 {
@@ -18,6 +19,7 @@ struct PlayerInfo
 	double samplerate;
 	PaStream *stream;
 	lua_State* L;
+	mutex_t lock;
 };
 typedef struct PlayerInfo PlayerInfo;
 
@@ -39,6 +41,8 @@ static int pa_stream_callback(const void* inputBuffer, void* outputBuffer,
 
 	float* out = (float*)outputBuffer;
 	PlayerInfo* pi = (PlayerInfo*)udata;
+
+	mutex_lock(&pi->lock);
 	lua_State* L = pi->L;
 
 	/* function callback(out, nsamples, pos, rate, channels) */
@@ -51,6 +55,7 @@ static int pa_stream_callback(const void* inputBuffer, void* outputBuffer,
 
 	if (0 != lua_pcall(L, 5, 0, 0)) {
 		fprintf(stderr, "Error calling function: %s\n", lua_tostring(L, -1));
+		mutex_unlock(&pi->lock);
 		return paAbort;
 	}
 
@@ -65,6 +70,7 @@ static int pa_stream_callback(const void* inputBuffer, void* outputBuffer,
 	lua_settop(L, 2);
 
 	pi->pos += frames;
+	mutex_unlock(&pi->lock);
 
 	return paContinue;
 }
@@ -84,11 +90,14 @@ static int l_player_play(lua_State* L)
 	if (NULL == pi->stream)
 		return luaL_error(L, "Stream not properly initialized.");
 
+	mutex_lock(&pi->lock);
 	PaError err = Pa_StartStream(pi->stream);
+	mutex_unlock(&pi->lock);
 	if (err != paNoError)
 		return luaL_error(L, "Cannot play stream: %s", Pa_GetErrorText(err));
 
-	return 0;
+	lua_settop(L, 1);
+	return 1;
 }
 
 static int l_player_stop(lua_State* L)
@@ -97,23 +106,38 @@ static int l_player_stop(lua_State* L)
 	if (NULL == pi->stream)
 		return luaL_error(L, "Stream not properly initialized.");
 
+	mutex_lock(&pi->lock);
 	PaError err = Pa_AbortStream(pi->stream);
+	mutex_unlock(&pi->lock);
 	if (err != paNoError)
 		return luaL_error(L, "Cannot stop stream: %s", Pa_GetErrorText(err));
 
-	return 0;
+	lua_settop(L, 1);
+	return 1;
 }
 
 static int l_player_seek(lua_State* L)
 {
 	PlayerInfo* pi = l_checkplayer(L, 1);
 	int pos = luaL_checkint(L, 2);
+	PaError err;
 
-	l_player_stop(L);
+	mutex_lock(&pi->lock);
+	err = Pa_AbortStream(pi->stream);
+	if (err != paNoError) {
+		mutex_unlock(&pi->lock);
+		return luaL_error(L, "Cannot stop stream: %s", Pa_GetErrorText(err));
+	}
+
 	pi->pos = pos;
-	l_player_play(L);
 
-	return 0;
+	err = Pa_StartStream(pi->stream);
+	mutex_unlock(&pi->lock);
+	if (err != paNoError)
+		return luaL_error(L, "Cannot play stream: %s", Pa_GetErrorText(err));
+
+	lua_settop(L, 1);
+	return 1;
 }
 
 static int l_player_load(lua_State* L)
@@ -122,6 +146,35 @@ static int l_player_load(lua_State* L)
 	if (NULL == pi->stream)
 		return luaL_error(L, "Stream not properly initialized.");
 	lua_pushnumber(L, Pa_GetStreamCpuLoad(pi->stream));
+	return 1;
+}
+
+static int l_player_send(lua_State* L)
+{
+	PlayerInfo* pi = l_checkplayer(L, 1);
+	const char* name = luaL_checkstring(L, 2);
+	if (lua_isnone(L, 3))
+		return luaL_typerror(L, 3, "any");
+
+	mutex_lock(&pi->lock);
+	l_copy_values(L, pi->L, 1);
+	lua_setfield(pi->L, LUA_GLOBALSINDEX, name);
+	mutex_unlock(&pi->lock);
+
+	lua_settop(L, 1);
+	return 1;
+}
+
+static int l_player_receive(lua_State* L)
+{
+	PlayerInfo* pi = l_checkplayer(L, 1);
+	const char* name = luaL_checkstring(L, 2);
+
+	mutex_lock(&pi->lock);
+	lua_getfield(pi->L, LUA_GLOBALSINDEX, name);
+	l_move_values(pi->L, L, 1);
+	mutex_unlock(&pi->lock);
+
 	return 1;
 }
 
@@ -135,6 +188,7 @@ static int l_player_gc(lua_State* L)
 	if (err != paNoError)
 		fprintf(stderr, "Unable to close player stream: %s\n", Pa_GetErrorText(err));
 
+	mutex_destroy(&pi->lock);
 	lua_close(pi->L);
 
 	return 0;
@@ -192,6 +246,8 @@ static int l_player_new(lua_State* L)
 		return luaL_error(L, "Cannot create player stream: %s\n", Pa_GetErrorText(err));
 	}
 
+	mutex_init(&pi->lock);
+
 	/* push function to the new state */
 	pi->L = luaL_newstate();
 	lua_atpanic(pi->L, &l_panic);
@@ -219,6 +275,12 @@ static int l_player_new(lua_State* L)
 
 		lua_pushcfunction(L, &l_player_load);
 		lua_setfield(L, -2, "cpuload");
+
+		lua_pushcfunction(L, &l_player_send);
+		lua_setfield(L, -2, "send");
+
+		lua_pushcfunction(L, &l_player_receive);
+		lua_setfield(L, -2, "receive");
 
 		lua_pushcfunction(L, &l_player_gc);
 		lua_setfield(L, -2, "__gc");
