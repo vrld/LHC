@@ -86,18 +86,22 @@ static int l_read(lua_State* L)
 		lua_createtable(L, frames, 0);
 	}
 
-	sf_seek(file, pos, SEEK_SET); /* TODO: error handling */
+	sf_count_t frames_read;
 	float* buffer = malloc(frames * info.channels * sizeof(float));
-	sf_count_t frames_read = sf_readf_float(file, buffer, frames);
+	if (-1 == sf_seek(file, pos, SEEK_SET))
+		frames_read = 0;
+	else
+		frames_read = sf_readf_float(file, buffer, frames);
 	sf_close(file);
 
 	for (int i = 0; i < frames_read*info.channels; ++i) {
 		lua_pushnumber(L, buffer[i]);
 		lua_rawseti(L, 4, i+1);
 	}
+
 	// append silence
-	for (int i = frames_read; i < frames*info.channels; ++i) {
-		lua_pushnumber(L, buffer[frames_read - 1 - (i%info.channels)]);
+	for (int i = frames_read*info.channels; i < frames*info.channels; ++i) {
+		lua_pushnumber(L, 0);
 		lua_rawseti(L, 4, i+1);
 	}
 
