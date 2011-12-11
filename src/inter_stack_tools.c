@@ -19,7 +19,8 @@ static inline void copy_type(int type, lua_State* from, lua_State* to, int i)
 		case LUA_TFUNCTION:
 			l_copy_function(from, to, i); break;
 		default:
-			luaL_error(from, "Cannot copy `%s' at index %d", lua_typename(from, type), i);
+			fprintf(stderr, "Cannot copy `%s' at index %d. Putting nil-value.\n", lua_typename(from, type), i);
+			lua_pushnil(to);
 	}
 }
 
@@ -136,21 +137,27 @@ void l_copy_function(lua_State* from, lua_State* to, int i)
 	}
 	lua_pop(to, 1);
 
-	/* check if the function is serializable at all */
-	if (l_functiontype(from, i) != LUA_FT_VM)
-		luaL_error(from, "Cannot copy function at index %d (type: %s)", i, l_functypename(from, i));
+	/* copy function if serializeable or c function */
+	FunctionType ftype = l_functiontype(from, i);
+	if (ftype == LUA_FT_VM) {
+		StringBuilder b;
+		string_builder_init(b);
+		lua_pushvalue(from, i);
+		lua_dump(from, string_writer, &b);
+		lua_pop(from, 1);
 
-	/* function not yet copied -> serialize and copy it */
-	StringBuilder b;
-	string_builder_init(b);
-	lua_pushvalue(from, i);
-	lua_dump(from, string_writer, &b);
-	lua_pop(from, 1);
-
-	int result = luaL_loadbuffer(to, b.str, b.size, NULL);
-	string_builder_cleanup(b);
-	if (0 != result)
-		luaL_error(from, "Cannot copy function at index %d: %s", i, lua_tostring(to, -1));
+		int result = luaL_loadbuffer(to, b.str, b.size, NULL);
+		string_builder_cleanup(b);
+		if (0 != result) {
+			fprintf(stderr, "Cannot copy function at index %d: %s\n", i, lua_tostring(to, -1));
+			return;
+		}
+	} else if (ftype == LUA_FT_C) {
+		lua_pushcfunction(to, lua_tocfunction(from, i));
+	} else {
+		fprintf(stderr, "Cannot copy function at index %d (%s)\n", i, l_functypename(from, i));
+		return;
+	}
 
 	/* copy upvalues */
 	const char* name = NULL;
@@ -160,8 +167,9 @@ void l_copy_function(lua_State* from, lua_State* to, int i)
 		else
 			copy_type(lua_type(from, lua_gettop(from)), from, to, lua_gettop(from));
 		lua_pop(from, 1);
-		if (NULL == lua_setupvalue(to, -2, upidx)) /* shouldn't really happen */
+		if (NULL == lua_setupvalue(to, -2, upidx)) { /* shouldn't really happen */
 			luaL_error(from, "Cannot copy upvalue (%s)", name);
+		}
 	}
 
 	/* save function in lookup table */
