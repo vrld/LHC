@@ -112,7 +112,7 @@ void l_copy_table(lua_State* from, lua_State* to, int i)
 	/* put new table in lookup table and remove it from the stack leaving
 	 * only the new table on top */
 	lua_pushlightuserdata(to, (void*)lua_topointer(from, i));
-	lua_pushvalue(to, -1);
+	lua_pushvalue(to, -2);
 	lua_rawset(to, -4);
 	lua_remove(to, -2);
 #ifdef DEBUG
@@ -174,7 +174,7 @@ void l_copy_function(lua_State* from, lua_State* to, int i)
 
 	/* save function in lookup table */
 	lua_pushlightuserdata(to, (void*)lua_topointer(from, i));
-	lua_pushvalue(to, -1);
+	lua_pushvalue(to, -2);
 	lua_rawset(to, -4);
 	lua_remove(to, -2);
 #ifdef DEBUG
