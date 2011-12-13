@@ -180,8 +180,8 @@ static int l_player_receive(lua_State* L)
 
 static int l_player_gc(lua_State* L)
 {
-	PlayerInfo* pi = l_checkplayer(L, 1);
-	if (NULL == pi->stream)
+	PlayerInfo* pi = (PlayerInfo*)lua_touserdata(L, 1);
+	if (NULL == pi || NULL == pi->stream)
 		return 0;
 
 	PaError err = Pa_CloseStream(pi->stream);
