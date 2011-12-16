@@ -6,18 +6,8 @@
 #include <stdlib.h>
 #include <assert.h>
 
-typedef enum {
-	STREAM_READONCE,
-	STREAM_READLOOP,
-	STREAM_WRITE
-} StreamType;
-
-typedef struct FileInfo {
-	SF_INFO info;
-	SNDFILE *file;
-	StreamType type;
-	sf_count_t pos;
-} FileInfo;
+#include "soundfile.h"
+#include "reference.h"
 
 static const char* to_format_name(int format)
 {
@@ -83,36 +73,42 @@ static int l_to_format_enum(lua_State* L, const char* path, int bits)
 
 static FileInfo* l_checkfile(lua_State* L, int idx)
 {
-	FileInfo* si = (FileInfo*)luaL_checkudata(L, idx, "lhc.soundfile.stream");
-	if (NULL == si)
-		luaL_typerror(L, idx, "Stream");
-	if (NULL == si->file)
-		luaL_error(L, "Stream argument %d invalid: Stream closed.", idx);
-	return si;
+	Reference* ref = (Reference*)luaL_checkudata(L, idx, reference_names[REF_SOUNDFILE]);
+	if (NULL == ref)
+		luaL_typerror(L, idx, "Soundfile");
+	if (REF_SOUNDFILE != ref->type)
+		luaL_error(L, "Invalid argument %d: Invalid refrence type: %s", idx, reference_names[ref->type]);
+
+	FileInfo* sf = (FileInfo*)ref->ref;
+	if (NULL == sf || 0 >= sf->refcount)
+		luaL_error(L, "Invalid argument %d: Invalid reference.", idx);
+	if (NULL == sf->file)
+		luaL_error(L, "Invalid argument %d: file closed.", idx);
+	return sf;
 }
 
 static int l_file_info(lua_State* L)
 {
-	FileInfo* si = l_checkfile(L, 1);
+	FileInfo* sf = l_checkfile(L, 1);
 
 	lua_createtable(L, 0, 6);
 
-	lua_pushinteger(L, si->pos);
+	lua_pushinteger(L, sf->pos);
 	lua_setfield(L, -2, "pos");
 
-	lua_pushinteger(L, si->info.frames);
+	lua_pushinteger(L, sf->info.frames);
 	lua_setfield(L, -2, "frames");
 
-	lua_pushinteger(L, si->info.samplerate);
+	lua_pushinteger(L, sf->info.samplerate);
 	lua_setfield(L, -2, "samplerate");
 
-	lua_pushinteger(L, si->info.channels);
+	lua_pushinteger(L, sf->info.channels);
 	lua_setfield(L, -2, "channels");
 
-	lua_pushstring(L, to_format_name(si->info.format));
+	lua_pushstring(L, to_format_name(sf->info.format));
 	lua_setfield(L, -2, "format");
 
-	switch (si->type) {
+	switch (sf->type) {
 		case STREAM_READONCE:
 			lua_pushliteral(L, "once"); break;
 		case STREAM_READLOOP:
@@ -128,31 +124,31 @@ static int l_file_info(lua_State* L)
 
 static int l_file_seek(lua_State* L)
 {
-	FileInfo* si = l_checkfile(L, 1);
+	FileInfo* sf = l_checkfile(L, 1);
 	int pos = luaL_checknumber(L, 2);
 
-	if (!si->info.seekable)
+	if (!sf->info.seekable)
 		return luaL_error(L, "Stream not seekable!");
 
-	if (STREAM_READLOOP == si->type) {
-		while (pos >= si->info.frames)
-			pos -= si->info.frames;
+	if (STREAM_READLOOP == sf->type) {
+		while (pos >= sf->info.frames)
+			pos -= sf->info.frames;
 		while (pos < 0)
-			pos += si->info.frames;
+			pos += sf->info.frames;
 	} else {
-		if (pos >= si->info.frames)
+		if (pos >= sf->info.frames)
 			return luaL_error(L, "Cannot seek to position %d: out of bounds.", pos);
 
 		if (pos < 0)
-			pos += si->info.frames;
+			pos += sf->info.frames;
 		if (pos < 0)
 			return luaL_error(L, "Cannot seek to position %d: out of bounds.",
-					pos - si->info.frames);
+					pos - sf->info.frames);
 	}
 
-	si->pos = sf_seek(si->file, pos, SEEK_SET);
-	if (pos != si->pos)
-		return luaL_error(L, "Could not seek to position %d: %s.", pos, sf_strerror(si->file));
+	sf->pos = sf_seek(sf->file, pos, SEEK_SET);
+	if (pos != sf->pos)
+		return luaL_error(L, "Could not seek to position %d: %s.", pos, sf_strerror(sf->file));
 
 	lua_settop(L, 1);
 	return 1;
@@ -160,42 +156,42 @@ static int l_file_seek(lua_State* L)
 
 static int l_file_read(lua_State* L)
 {
-	FileInfo* si = l_checkfile(L, 1);
+	FileInfo* sf = l_checkfile(L, 1);
 	int frames = luaL_checkinteger(L, 2);
 	if (frames <= 0)
 		return luaL_error(L, "Invalid number of requested frames: %d.", frames);
 
 	if (!lua_istable(L, 3)) {
 		lua_settop(L, 2);
-		lua_createtable(L, frames * si->info.channels, 0);
+		lua_createtable(L, frames * sf->info.channels, 0);
 	}
 
-	float* buffer = malloc(frames * si->info.channels * sizeof(float));
-	memset(buffer, 0, frames * si->info.channels * sizeof(float));
+	float* buffer = malloc(frames * sf->info.channels * sizeof(float));
+	memset(buffer, 0, frames * sf->info.channels * sizeof(float));
 	sf_count_t frames_read = 0;
 
-	if (si->pos >= si->info.frames && STREAM_READLOOP != si->type)
+	if (sf->pos >= sf->info.frames && STREAM_READLOOP != sf->type)
 		frames_read = frames;
 	else
-		frames_read = sf_readf_float(si->file, buffer, frames);
+		frames_read = sf_readf_float(sf->file, buffer, frames);
 	int i;
-	for (i = 0; i < frames_read * si->info.channels; ++i) {
+	for (i = 0; i < frames_read * sf->info.channels; ++i) {
 		lua_pushnumber(L, buffer[i]);
 		lua_rawseti(L, 3, i+1);
 	}
 
-	if (frames_read < frames && STREAM_READLOOP == si->type) {
-		si->pos = 0;
-		sf_seek(si->file, 0, SEEK_SET);
-		frames_read = sf_readf_float(si->file, buffer+i, frames-frames_read);
-		for (; i < frames * si->info.channels; ++i) {
+	if (frames_read < frames && STREAM_READLOOP == sf->type) {
+		sf->pos = 0;
+		sf_seek(sf->file, 0, SEEK_SET);
+		frames_read = sf_readf_float(sf->file, buffer+i, frames-frames_read);
+		for (; i < frames * sf->info.channels; ++i) {
 			lua_pushnumber(L, buffer[i]);
 			lua_rawseti(L, 3, i+1);
 		}
 	}
 
 	free(buffer);
-	si->pos += frames_read;
+	sf->pos += frames_read;
 
 	lua_settop(L,1);
 	lua_pushinteger(L, frames_read);
@@ -204,14 +200,16 @@ static int l_file_read(lua_State* L)
 
 static int l_file_write(lua_State* L)
 {
-	FileInfo* si = l_checkfile(L, 1);
+	FileInfo* sf = l_checkfile(L, 1);
 	if (!lua_istable(L, 2))
 		return luaL_typerror(L, 2, "table");
 
+	// Possible race conditions if a file is written/read in two threads
+
 	size_t samples = lua_objlen(L, 2);
-	if (0 != samples % si->info.channels)
+	if (0 != samples % sf->info.channels)
 		return luaL_error(L, "Invalid number of samples: %d. Need to be multiples of %d.",
-				samples, si->info.channels);
+				samples, sf->info.channels);
 
 	float* buffer = malloc(samples * sizeof(float));
 	for (size_t i = 1; i <= samples; ++i) {
@@ -220,10 +218,10 @@ static int l_file_write(lua_State* L)
 		lua_pop(L, 1);
 	}
 
-	sf_count_t written = sf_write_float(si->file, buffer, samples);
+	sf_count_t written = sf_write_float(sf->file, buffer, samples);
 	free(buffer);
-	si->pos += written / si->info.channels;
-	si->info.frames = si->pos > si->info.frames ? si->pos : si->info.frames;
+	sf->pos += written / sf->info.channels;
+	sf->info.frames = sf->pos > sf->info.frames ? sf->pos : sf->info.frames;
 
 	lua_settop(L, 1);
 	lua_pushinteger(L, written);
@@ -232,30 +230,30 @@ static int l_file_write(lua_State* L)
 
 static int l_file_close(lua_State* L)
 {
-	FileInfo* si = l_checkfile(L, 1);
-	sf_close(si->file);
-	si->file = NULL;
+	FileInfo* sf = l_checkfile(L, 1);
+	sf_close(sf->file);
+	sf->file = NULL;
 	return 0;
 }
 
 static int l_file_index(lua_State* L)
 {
-	FileInfo* si = (FileInfo*)lua_touserdata(L, 1);
-	assert(NULL != si);
+	FileInfo* sf = l_checkfile(L, 1);
+	assert(NULL != sf);
 	const char* key = lua_tostring(L, 2);
 
 	if (0 == strcmp("pos", key)) {
-		lua_pushnumber(L, si->pos);
+		lua_pushnumber(L, sf->pos);
 	} else if (0 == strcmp("frames", key)) {
-		lua_pushinteger(L, si->info.frames);
+		lua_pushinteger(L, sf->info.frames);
 	} else if (0 == strcmp("samplerate", key)) {
-		lua_pushinteger(L, si->info.samplerate);
+		lua_pushinteger(L, sf->info.samplerate);
 	} else if (0 == strcmp("channels", key)) {
-		lua_pushinteger(L, si->info.channels);
+		lua_pushinteger(L, sf->info.channels);
 	} else if (0 == strcmp("format", key)) {
-		lua_pushstring(L, to_format_name(si->info.format));
+		lua_pushstring(L, to_format_name(sf->info.format));
 	} else if (0 == strcmp("type", key)) {
-		switch (si->type) {
+		switch (sf->type) {
 			case STREAM_READONCE:
 				lua_pushliteral(L, "once"); break;
 			case STREAM_READLOOP:
@@ -276,11 +274,14 @@ static int l_file_index(lua_State* L)
 
 static int l_file_gc(lua_State* L)
 {
-	FileInfo* si = (FileInfo*)lua_touserdata(L, 1);
-	if (NULL == si || NULL == si->file)
-		return 0;
+	FileInfo* sf = l_checkfile(L, 1);
 
-	sf_close(si->file);
+	if (--sf->refcount <= 0) {
+		if (sf->file)
+			sf_close(sf->file);
+		sf->file = NULL;
+		free(sf);
+	}
 	return 0;
 }
 
@@ -315,14 +316,19 @@ static int l_file_new(lua_State* L)
 		return luaL_error(L, "Cannot open `%s' for %s: %s.", path,
 				mode == SFM_READ ? "reading" : "writing", sf_strerror(NULL));
 
-	FileInfo* si = (FileInfo*)lua_newuserdata(L, sizeof(FileInfo));
-	si->info = info;
-	si->file = file;
-	si->type = type;
-	si->pos  = 0;
+	Reference* ref = (Reference*)lua_newuserdata(L, sizeof(Reference));
+	ref->type = REF_SOUNDFILE;
+
+	FileInfo* sf = (FileInfo*)malloc(sizeof(FileInfo));
+	sf->refcount = 1;
+	sf->info = info;
+	sf->file = file;
+	sf->type = type;
+	sf->pos  = 0;
+	ref->ref = sf;
 
 
-	if (luaL_newmetatable(L, "lhc.soundfile.stream")) {
+	if (luaL_newmetatable(L, reference_names[REF_SOUNDFILE])) {
 		lua_pushcfunction(L, l_file_info);
 		lua_setfield(L, -2, "info");
 

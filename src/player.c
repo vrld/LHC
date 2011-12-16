@@ -9,19 +9,10 @@
 #include <assert.h>
 
 #include "config.h"
+#include "reference.h"
 #include "inter_stack_tools.h"
 #include "mutex.h"
-
-struct PlayerInfo
-{
-	int channels;
-	int pos;
-	double samplerate;
-	PaStream *stream;
-	lua_State* L;
-	mutex_t lock;
-};
-typedef struct PlayerInfo PlayerInfo;
+#include "player.h"
 
 static int l_panic(lua_State* L)
 {
@@ -78,9 +69,17 @@ static int pa_stream_callback(const void* inputBuffer, void* outputBuffer,
 
 PlayerInfo* l_checkplayer(lua_State* L, int idx)
 {
-	PlayerInfo* pi = (PlayerInfo*)luaL_checkudata(L, idx, "lhc.player.player");
-	if (NULL == pi)
-		luaL_typerror(L, idx, "Player");
+	Reference* ref = (Reference*)luaL_checkudata(L, idx, reference_names[REF_PLAYER]);
+	if (NULL == ref)
+		luaL_typerror(L, idx, "Reference");
+	if (REF_PLAYER != ref->type)
+		luaL_error(L, "Invalid argument %d: Invalid refrence type: %s", idx, reference_names[ref->type]);
+
+	PlayerInfo* pi = (PlayerInfo*)ref->ref;
+	if (NULL == pi || 0 >= pi->refcount)
+		luaL_error(L, "Invalid argument %d: Invalid reference.", idx);
+	if (NULL == pi->stream)
+		luaL_error(L, "Invalid argument %d: Stream not properly initialized.", idx);
 	return pi;
 }
 
@@ -180,16 +179,17 @@ static int l_player_receive(lua_State* L)
 
 static int l_player_gc(lua_State* L)
 {
-	PlayerInfo* pi = (PlayerInfo*)lua_touserdata(L, 1);
-	if (NULL == pi || NULL == pi->stream)
-		return 0;
+	PlayerInfo* pi = l_checkplayer(L, 1);
 
-	PaError err = Pa_CloseStream(pi->stream);
-	if (err != paNoError)
-		fprintf(stderr, "Unable to close player stream: %s\n", Pa_GetErrorText(err));
+	if (--pi->refcount <= 0) {
+		PaError err = Pa_CloseStream(pi->stream);
+		if (err != paNoError)
+			fprintf(stderr, "Unable to close player stream: %s\n", Pa_GetErrorText(err));
 
-	mutex_destroy(&pi->lock);
-	lua_close(pi->L);
+		mutex_destroy(&pi->lock);
+		lua_close(pi->L);
+		free(pi);
+	}
 
 	return 0;
 }
@@ -197,8 +197,7 @@ static int l_player_gc(lua_State* L)
 /* check if user queries struct members. otherwise forward to metatable. */
 static int l_player_index(lua_State* L)
 {
-	PlayerInfo* pi = (PlayerInfo*)lua_touserdata(L, 1);
-	assert(NULL != pi);
+	PlayerInfo* pi = l_checkplayer(L, 1);
 	const char* key = lua_tostring(L, 2);
 
 	if (0 == strcmp("pos", key)) {
@@ -234,14 +233,20 @@ static int l_player_new(lua_State* L)
 		return luaL_typerror(L, 1, "function");
 
 	/* create and init new userdata */
-	PlayerInfo* pi = (PlayerInfo*)lua_newuserdata(L, sizeof(PlayerInfo));
+	Reference* ref = (Reference*)lua_newuserdata(L, sizeof(Reference));
+	ref->type = REF_PLAYER;
+
+	PlayerInfo* pi = (PlayerInfo*)malloc(sizeof(PlayerInfo));
+	pi->refcount   = 1;
 	pi->channels   = channels;
 	pi->pos        = 0;
 	pi->samplerate = samplerate;
+	pi->refcount = 1;
 	PaError err = Pa_OpenDefaultStream(&(pi->stream), 0, channels, paFloat32,
 			samplerate, size_buffer, pa_stream_callback, pi);
 
 	if (err != paNoError) {
+		free(pi);
 		pi->stream = NULL;
 		return luaL_error(L, "Cannot create player stream: %s\n", Pa_GetErrorText(err));
 	}
@@ -262,8 +267,10 @@ static int l_player_new(lua_State* L)
 		lua_rawseti(pi->L, -2, i);
 	}
 
+	ref->ref = pi;
+
 	/* set metatable for userdata */
-	if (luaL_newmetatable(L, "lhc.player.player")) {
+	if (luaL_newmetatable(L, reference_names[REF_PLAYER])) {
 		lua_pushcfunction(L, &l_player_play);
 		lua_setfield(L, -2, "play");
 

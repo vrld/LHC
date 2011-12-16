@@ -37,6 +37,10 @@ int string_writer(lua_State* L, const void* b, size_t size, void* ud);
 void l_copy_string(lua_State* from, lua_State* to, int i);
 void l_copy_table(lua_State* from, lua_State* to, int i);
 void l_copy_function(lua_State* from, lua_State* to, int i);
+void l_copy_udata(lua_State* from, lua_State* to, int i);
+
+#define l_copy_lightudata(from, to, i) \
+	lua_pushlightuserdata(to, (void*)lua_topointer(from, i))
 
 void l_copy_values(lua_State* from, lua_State* to, int n);
 #define l_move_values(from, to, n) \

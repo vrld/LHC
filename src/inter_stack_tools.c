@@ -3,8 +3,11 @@
 #include <string.h>
 #include <assert.h>
 
-static inline void copy_type(int type, lua_State* from, lua_State* to, int i)
+#include "reference.h"
+
+static inline void copy_type(lua_State* from, lua_State* to, int i)
 {
+	int type = lua_type(from, i);
 	switch (type) {
 		case LUA_TNIL:
 			l_copy_nil(from, to, i); break;
@@ -18,6 +21,10 @@ static inline void copy_type(int type, lua_State* from, lua_State* to, int i)
 			l_copy_table(from, to, i); break;
 		case LUA_TFUNCTION:
 			l_copy_function(from, to, i); break;
+		case LUA_TUSERDATA:
+			l_copy_udata(from, to, i); break;
+		case LUA_TLIGHTUSERDATA:
+			l_copy_lightudata(from, to, i); break;
 		default:
 			fprintf(stderr, "Cannot copy `%s' at index %d. Putting nil-value.\n", lua_typename(from, type), i);
 			lua_pushnil(to);
@@ -96,7 +103,7 @@ void l_copy_table(lua_State* from, lua_State* to, int i)
 	while (lua_next(from, i) != 0) {
 		/* copy key, then value */
 		for (int i = -2; i <= -1; ++i)
-			copy_type(lua_type(from, i), from, to, i);
+			copy_type(from, to, i);
 
 		lua_rawset(to, -3);
 		lua_pop(from, 1);
@@ -165,7 +172,7 @@ void l_copy_function(lua_State* from, lua_State* to, int i)
 		if (lua_equal(from, i, -1)) /* upvalue to itself */
 			lua_pushvalue(to, -1);
 		else
-			copy_type(lua_type(from, lua_gettop(from)), from, to, lua_gettop(from));
+			copy_type(from, to, lua_gettop(from));
 		lua_pop(from, 1);
 		if (NULL == lua_setupvalue(to, -2, upidx)) { /* shouldn't really happen */
 			luaL_error(from, "Cannot copy upvalue (%s)", name);
@@ -185,6 +192,60 @@ void l_copy_function(lua_State* from, lua_State* to, int i)
 	return;
 }
 
+void l_copy_udata(lua_State* from, lua_State* to, int i)
+{
+	/* check if already copied */
+	lua_getfield(to, LUA_REGISTRYINDEX, "l-copy-values-visited");
+	lua_pushlightuserdata(to, (void*)lua_topointer(from, i));
+	lua_rawget(to, -2);
+
+	if (!lua_isnil(to, -1)) {
+		lua_remove(to, -2);
+		return;
+	}
+	lua_pop(to, 1);
+
+	/* check if copyable */
+	lua_getmetatable(from, i);
+	lua_getfield(from, LUA_REGISTRYINDEX, reference_names[REF_PLAYER]);
+	lua_getfield(from, LUA_REGISTRYINDEX, reference_names[REF_SOUNDFILE]);
+	int known_udata = lua_rawequal(from, -3, -2) || lua_rawequal(from, -3, -1);
+	lua_pop(from, 3);
+
+	if (!known_udata) {
+		fprintf(stderr, "Cannot copy userdata at index %d: Don't know how.\n", i);
+		return;
+	}
+
+	/* copy reference */
+	Reference* ref_from = (Reference*)lua_touserdata(from, i);
+	Reference* ref_to   = (Reference*)lua_newuserdata(to, sizeof(Reference));
+	ref_to->type        = ref_from->type;
+	ref_to->ref         = ref_from->ref;
+	/* horrible hack that assumes refcount is the first item in the referenced struct */
+	RefHeader* header = (RefHeader*)ref_from->ref;
+	header->refcount++;
+
+	/* copy metatable if needed */
+	lua_getfield(to, LUA_REGISTRYINDEX, reference_names[ref_from->type]);
+	if (lua_isnil(to, -1)) {
+		lua_pop(to, 1);
+		lua_getmetatable(from, i);
+		l_copy_table(from, to, lua_gettop(from));
+		lua_pop(from, 1);
+
+		lua_pushvalue(to, -1);
+		lua_setfield(to, LUA_REGISTRYINDEX, reference_names[ref_from->type]);
+	}
+	lua_setmetatable(to, -2);
+
+	/* save udata in lookup table */
+	lua_pushlightuserdata(to, (void*)lua_topointer(from, i));
+	lua_pushvalue(to, -2);
+	lua_rawset(to, -4);
+	lua_remove(to, -2);
+}
+
 void l_copy_values(lua_State* from, lua_State* to, int n)
 {
 	int top_from = lua_gettop(from);
@@ -201,7 +262,7 @@ void l_copy_values(lua_State* from, lua_State* to, int n)
 	lua_setfield(to, LUA_REGISTRYINDEX, "l-copy-values-visited");
 
 	for (int i = top_from - n + 1; i <= top_from; ++i)
-		copy_type(lua_type(from, i), from, to, i);
+		copy_type(from, to, i);
 
 	/* clear lookup-table  */
 	lua_pushnil(to);
