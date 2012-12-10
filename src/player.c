@@ -122,7 +122,7 @@ static int lhc_player_pause(lua_State* L)
 	if (NULL == pi->stream)
 		return luaL_error(L, "Stream not properly initialized.");
 
-	PaError err = Pa_AbortStream(pi->stream);
+	PaError err = Pa_StopStream(pi->stream);
 	if (err != paNoError)
 		return luaL_error(L, "Cannot pause stream: %s", Pa_GetErrorText(err));
 
@@ -142,15 +142,6 @@ static int lhc_player_rewind(lua_State *L)
 	lua_settop(L, 1);
 	lua_pushinteger(L, 0);
 	return lhc_player_seekTo(L);
-}
-
-static int lhc_player_load(lua_State* L)
-{
-	PlayerInstance* pi = lhc_checkplayer(L, 1);
-	if (NULL == pi->stream)
-		return luaL_error(L, "Stream not properly initialized.");
-	lua_pushnumber(L, Pa_GetStreamCpuLoad(pi->stream));
-	return 1;
 }
 
 static int lhc_player___gc(lua_State* L)
@@ -232,9 +223,6 @@ int lhc_player_new(lua_State* L)
 
 		lua_pushcfunction(L, lhc_player_stop);
 		lua_setfield(L, -2, "stop");
-
-		lua_pushcfunction(L, lhc_player_load);
-		lua_setfield(L, -2, "load");
 	}
 	lua_setmetatable(L, -2);
 
