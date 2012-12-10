@@ -2,6 +2,12 @@
 
 local lhc = require 'lhc'
 
+local function sleep(t)
+	local t0 = os.clock()
+	local t1 = t0 + t
+	while os.clock() < t1 do --[[nothing]] end
+end
+
 describe("Buffers", function()
 
 	describe("Creation", function()
@@ -473,6 +479,92 @@ describe("Buffers", function()
 				{c:get(1,-1)},
 				{d:get(1,-1)},
 			})
+		end)
+	end)
+end)
+
+describe("Player tests", function()
+	local seatbelts = lhc.buffer(44100, function(i)
+		return math.sin(i/44100 * 2 * math.pi * 440)
+	end) * (function(x)
+		x = x / 40000
+		return math.max(0, (1 / math.exp((5*x)^2) + (1-x)) / 2)
+	end) * 0.5
+
+	it("can play buffers", function()
+		assert.has_no.errors(function()
+			local p = lhc.player(seatbelts, 44100, 1)
+			p:play()
+			sleep(1)
+		end)
+	end)
+
+	it("can pause", function()
+		assert.has_no.errors(function()
+			local p = lhc.player(seatbelts, 44100, 1)
+			p:play()
+			sleep(0.3)
+			p:pause()
+			sleep(0.5)
+			p:play()
+			sleep(0.7)
+		end)
+	end)
+
+	it("can rewind", function()
+		assert.has_no.errors(function()
+			local p = lhc.player(seatbelts, 44100, 1)
+			p:play()
+			sleep(0.3)
+			p:rewind()
+			sleep(1)
+		end)
+	end)
+
+	it("can seek to samples", function()
+		assert.has_no.errors(function()
+			local p = lhc.player(seatbelts, 44100, 1)
+			p:seekTo(44100 * 0.5)
+			p:play()
+			sleep(1)
+		end)
+	end)
+end)
+
+describe("Soundfile tests", function()
+	local seatbelts = lhc.buffer(44100, function(i)
+		return math.sin(i/44100 * 2 * math.pi * 440)
+	end) * (function(x)
+		x = x / 40000
+		return math.max(0, (1 / math.exp((5*x)^2) + (1-x)) / 2)
+	end) * 0.5
+
+	local encoded
+	it("can encode audio to a string", function()
+		assert.has_no.errors(function()
+			encoded = lhc.soundfile.encode(seatbelts, "wav", 44100, 1)
+		end)
+	end)
+
+	it("can decode audio from a string", function()
+		assert.has_no.errors(function()
+			local b, rate, channels = lhc.soundfile.decode(encoded)
+			lhc.play(b, rate, channels)
+			sleep(1)
+		end)
+	end)
+
+	it("write audio to a file", function()
+		assert.has_no.errors(function()
+			encoded = lhc.soundfile.write(seatbelts, "seatbelts.wav", 44100, 1)
+		end)
+	end)
+
+	it("read audio from a file", function()
+		assert.has_no.errors(function()
+			local b, rate, channels = lhc.soundfile.read("seatbelts.wav")
+			lhc.play(b, rate, channels)
+			sleep(1)
 		end)
 	end)
 end)
