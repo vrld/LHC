@@ -126,7 +126,8 @@ static sf_count_t vio_read(void *ptr, sf_count_t count, void *ud)
 	if (info->pos + count > (ptrdiff_t)info->len)
 		count = info->len - info->pos;
 
-	memcpy(ptr, info->data, count);
+	memcpy(ptr, info->data + info->pos, count);
+	info->pos += count;
 
 	return count;
 }
@@ -236,12 +237,14 @@ static int lhc_soundfile_encode(lua_State *L)
 		return luaL_error(L, "Cannot open context for encoding: %s",
 				sf_strerror(NULL));
 
-	int ret = lhc_soundfile_encode_common(L, sf, buf);
+	(void)lhc_soundfile_encode_common(L, sf, buf);
+
+	lua_pushlstring(L, (const char*)ud.data, ud.len);
 
 	if (NULL != ud.data)
 		free(ud.data);
 
-	return ret;
+	return 1;
 }
 
 static int lhc_soundfile_read(lua_State *L)
