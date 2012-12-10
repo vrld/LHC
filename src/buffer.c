@@ -326,7 +326,7 @@ static int lhc_buffer_map(lua_State *L)
 
 	for (; posi <= pose; ++posi)
 	{
-		lua_pushvalue(L, 2);
+		lua_pushvalue(L, stackpos_function);
 		lua_pushinteger(L, posi);
 		lua_pushnumber(L, buf[posi-1]);
 		lua_call(L, 2, 1);
@@ -335,6 +335,7 @@ static int lhc_buffer_map(lua_State *L)
 		lua_pop(L, 1);
 	}
 
+	lua_settop(L, 1);
 	return 1;
 }
 
@@ -385,7 +386,7 @@ static int lhc_buffer_sub(lua_State *L)
 	float *buf  = lhc_checkbuffer(L, 1);
 	size_t size = lhc_buffer_nsamples(L, 1);
 	size_t posi = posrelat(luaL_checkinteger(L, 2), size);
-	size_t pose = posrelat(luaL_optinteger(L, 3, posi), size);
+	size_t pose = posrelat(luaL_optinteger(L, 3, size), size);
 
 	if (posi <= 0)
 		posi = 1;
@@ -444,10 +445,26 @@ static int lhc_buffer_insert(lua_State *L)
 	else if (LUA_TNUMBER == type)
 	{
 		should_free = 1;
-		size_insert = lua_gettop(L) - 2;
-		insert = malloc(size_insert * sizeof(float));
-		for (size_t i = 0; i < size_insert; ++i)
-			insert[i] = lua_tonumber(L, 3 + i);
+		if (lua_isfunction(L, 4))
+		{
+			size_insert = lua_tointeger(L, 3);
+			insert = malloc(size_insert * sizeof(float));
+			for (size_t i = 0; i < size_insert; ++i)
+			{
+				lua_pushvalue(L, 4);
+				lua_pushinteger(L, i+posi+1);
+				lua_call(L, 1, 1);
+				insert[i] = lua_tonumber(L, -1);
+				lua_pop(L, 1);
+			}
+		}
+		else
+		{
+			size_insert = lua_gettop(L) - 2;
+			insert = malloc(size_insert * sizeof(float));
+			for (size_t i = 0; i < size_insert; ++i)
+				insert[i] = lua_tonumber(L, 3 + i);
+		}
 	}
 	else
 		return luaL_typerror(L, 3, "buffer or table or string or number");
@@ -485,14 +502,21 @@ static int lhc_buffer_convolve(lua_State *L)
 	int should_free = 0;
 
 	int type = lua_type(L, 2);
-	if (LUA_TFUNCTION == type)
+	if (LUA_TFUNCTION == type || (LUA_TNUMBER == type && lua_isfunction(L, 3)))
 	{
-		size2 = luaL_optinteger(L, 3, size1);
+		int fidx = 2;
+		size2 = size1;
+		if (lua_isfunction(L, 3))
+		{
+			fidx = 3;
+			size2 = luaL_checkinteger(L, 2);
+		}
+
 		should_free = 1;
 		b2 = malloc(size2 * sizeof(float));
 		for (size_t i = 0; i < size2; ++i)
 		{
-			lua_pushvalue(L, 2);
+			lua_pushvalue(L, fidx);
 			lua_pushinteger(L, i+1);
 			lua_call(L, 1, 1);
 			b2[i] = lua_tonumber(L, -1);
